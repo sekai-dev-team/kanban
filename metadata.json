@@ -1,0 +1,5 @@
+{
+    "name": "Kanban",
+    "description": "A minimalist, high-performance Kanban application for managing multiple projects with YAML-based data persistence and a focus on aesthetics.",
+    "requestFramePermissions": []
+}
