@@ -8,7 +8,6 @@ import {
     useSensor,
     useSensors,
     DragStartEvent,
-    DragOverEvent,
     DragEndEvent,
     defaultDropAnimationSideEffects,
     DropAnimation,
@@ -16,18 +15,20 @@ import {
 import { arrayMove, sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import {
     Plus, Layout, Moon, Sun, Database, CheckCircle2, Folder, Trash,
-    Loader2, Cloud, AlertCircle, Download, Search, Sparkles
+    Loader2, AlertCircle, Download, Search, Sparkles
 } from 'lucide-react';
 import { nanoid } from 'nanoid';
 
 // Local Imports
 import { Project, Task, COLUMNS, AppData, ColumnId } from './types';
-import { saveToStorage, loadFromStorage, exportToYaml, parseYaml, saveToServer, downloadYaml } from './services/yamlService';
+// [Change 1] 引入 loadFromServer，移除 loadFromStorage (或保留作为备用，但此处主要逻辑不再使用)
+import { exportToYaml, parseYaml, saveToServer, loadFromServer, downloadYaml } from './services/yamlService';
 import { Column } from './components/Column';
 import { SortableTask } from './components/SortableTask';
 import { Modal, Button, Input, TextArea } from './components/ui';
 import { AIChat } from './components/AIChat';
 
+const STORAGE_KEY = "kanban-data";
 // Helper to find task in recursive tree
 const findTask = (tasks: Task[], id: string): Task | undefined => {
     for (const task of tasks) {
@@ -69,9 +70,20 @@ const dropAnimation: DropAnimation = {
     }),
 };
 
+// Default empty state to prevent crashes before load
+const INITIAL_DATA: AppData = {
+    projects: [],
+    activeProjectId: '',
+    theme: 'light',
+    // 根据 types.ts 可能还有其他字段，保持最小结构
+};
+
 export default function App() {
-    // State
-    const [data, setData] = useState<AppData>(loadFromStorage);
+    // [Change 2] State Initialization
+    // 不再直接从 storage 读取，而是给一个初始空状态，等待 useEffect 加载
+    const [data, setData] = useState<AppData>(INITIAL_DATA);
+    const [isLoading, setIsLoading] = useState(true); // 新增 Loading 状态
+
     const [activeId, setActiveId] = useState<string | null>(null);
     const [activeTask, setActiveTask] = useState<Task | null>(null);
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
@@ -88,6 +100,7 @@ export default function App() {
 
     // Refs
     const searchInputRef = useRef<HTMLInputElement>(null);
+    const isFirstLoad = useRef(true); // 防止首次加载触发保存
 
     // Sensors
     const sensors = useSensors(
@@ -100,7 +113,7 @@ export default function App() {
         data.projects.find(p => p.id === data.activeProjectId) || data.projects[0]
         , [data.projects, data.activeProjectId]);
 
-    const filteredProjects = data.projects.filter(p =>
+    const filteredProjects = (data.projects || []).filter(p =>
         p.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
@@ -108,23 +121,70 @@ export default function App() {
         activeProject ? countLeaves(activeProject.columns['in-progress']) : 0
         , [activeProject]);
 
-    // Effects
+    // [Change 3] Load Data Effect
     useEffect(() => {
-        saveToStorage(data);
+        const initData = async () => {
+            try {
+                // 假设 loadFromServer 内部处理了 fetch 逻辑，并返回 AppData 对象
+                // 这里可能需要传入 project_id，或者你的 loadFromServer 默认获取 'default'
+                // 基于 main.py，如果你只有一个全局看板，可能在 yamlService 里写死了 ID
+                const serverData = await loadFromServer(STORAGE_KEY) as unknown as AppData;
+
+                // 如果服务器有数据且有项目，就用服务器的。
+                // 否则，就使用空状态 (DEFAULT_DATA)，不自动创建 Demo Project。
+                if (serverData && serverData.projects && serverData.projects.length > 0) {
+                    setData(serverData);
+                    if (serverData.theme === 'dark') document.documentElement.classList.add('dark');
+                } else {
+                    // 显式设置为空状态
+                    setData({
+                        projects: [],
+                        activeProjectId: '',
+                        theme: 'light',
+                        _version: 1
+                    });
+                }
+            } catch (error) {
+                console.error("Failed to load data from server:", error);
+                setSaveStatus('error');
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        initData();
+    }, []);
+
+    // [Change 4] Save Data Effect
+    useEffect(() => {
+        // 如果正在加载中，或者是刚加载完的那一次渲染，不要执行保存
+        if (isLoading) return;
+
+        if (isFirstLoad.current) {
+            isFirstLoad.current = false;
+            return;
+        }
+
+        // [Removed] saveToStorage(data); // 移除 LocalStorage 同步
+
         if (data.theme === 'dark') document.documentElement.classList.add('dark');
         else document.documentElement.classList.remove('dark');
 
         setSaveStatus('saving');
         const timer = setTimeout(async () => {
             try {
-                await saveToServer(data);
+                // 调用后端 API 保存
+                await saveToServer(STORAGE_KEY, data);
                 setSaveStatus('saved');
             } catch (error) {
+                console.error("Save error:", error);
                 setSaveStatus('error');
+                // TODO: Handle 409 Conflict here in next step
             }
-        }, 1000);
+        }, 1000); // Debounce 1s
+
         return () => clearTimeout(timer);
-    }, [data]);
+    }, [data, isLoading]);
 
     // Keyboard Shortcuts
     useEffect(() => {
@@ -138,6 +198,18 @@ export default function App() {
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, []);
+
+    // --- Loading Screen ---
+    if (isLoading) {
+        return (
+            <div className="flex h-screen items-center justify-center bg-gray-50 dark:bg-zinc-950 text-slate-900 dark:text-gray-100">
+                <div className="flex flex-col items-center gap-4">
+                    <Loader2 size={48} className="animate-spin text-indigo-500" />
+                    <p className="text-sm font-medium text-gray-500">Syncing with server...</p>
+                </div>
+            </div>
+        );
+    }
 
     // --- Handlers: Project ---
 
@@ -545,13 +617,13 @@ export default function App() {
                                 setData(p => ({ ...p, activeProjectId: project.id }));
                                 setSearchQuery('');
                             }}
-                            className={`group flex items-center justify-between px-3 py-2.5 rounded-lg text-sm cursor-pointer transition-all ${project.id === activeProject.id
+                            className={`group flex items-center justify-between px-3 py-2.5 rounded-lg text-sm cursor-pointer transition-all ${project.id === activeProject?.id
                                 ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white font-medium'
                                 : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-zinc-800/50 hover:text-gray-900 dark:hover:text-gray-200'
                                 }`}
                         >
                             <div className="flex items-center gap-2 truncate">
-                                <Folder size={16} className={project.id === activeProject.id ? 'fill-current opacity-20' : ''} />
+                                <Folder size={16} className={project.id === activeProject?.id ? 'fill-current opacity-20' : ''} />
                                 <span className="truncate">{project.name}</span>
                             </div>
                             {data.projects.length > 1 && (
@@ -587,90 +659,96 @@ export default function App() {
             </aside>
 
             {/* Main Board Area */}
-            <main className="flex-1 flex flex-col overflow-hidden relative">
-                <header className="h-auto min-h-[4rem] border-b border-gray-200 dark:border-zinc-800 flex flex-col justify-center px-8 bg-white/50 dark:bg-zinc-950/50 backdrop-blur-md z-10 py-3">
-                    <div className="flex items-start justify-between">
-                        <div className="flex-1 mr-8">
-                            <div className="flex items-center gap-4 mb-1">
-                                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-                                    {activeProject.name}
-                                </h2>
-                                <span className="px-2.5 py-0.5 rounded-full bg-gray-100 dark:bg-zinc-800 text-xs text-gray-500 dark:text-zinc-400 font-mono">
-                                    {Object.values(activeProject.columns).flat().length} Top-level Tasks
-                                </span>
-                            </div>
-                            {/* Project Description */}
-                            <input
-                                className="w-full bg-transparent text-sm text-gray-500 dark:text-gray-400 focus:text-gray-800 dark:focus:text-gray-200 focus:outline-none border-b border-transparent focus:border-gray-200 dark:focus:border-zinc-700 transition-colors pb-0.5"
-                                value={activeProject.description || ''}
-                                onChange={(e) => updateProjectDescription(e.target.value)}
-                                placeholder="Add a project description..."
-                            />
-                        </div>
-
-                        {/* Status Indicator & AI */}
-                        <div className="flex items-center gap-4">
-                            <Button
-                                variant="ghost"
-                                className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/10 hover:bg-indigo-100 dark:hover:bg-indigo-900/20"
-                                onClick={() => setIsAiOpen(!isAiOpen)}
-                            >
-                                <Sparkles size={16} />
-                                AI Assist
-                            </Button>
-
-                            {saveStatus === 'saving' && <Loader2 size={16} className="animate-spin text-gray-400" />}
-                            {saveStatus === 'saved' && <CheckCircle2 size={16} className="text-green-500" />}
-                            {saveStatus === 'error' && <AlertCircle size={16} className="text-red-500" />}
-                        </div>
-                    </div>
-                </header>
-
-                <div className="flex-1 overflow-x-auto overflow-y-hidden p-6">
-                    <DndContext
-                        sensors={sensors}
-                        collisionDetection={closestCorners}
-                        onDragStart={onDragStart}
-                        onDragOver={() => { }} // Handle over in DragEnd for logic simplicity with trees
-                        onDragEnd={onDragEnd}
-                        dropAnimation={dropAnimation}
-                    >
-                        <div className="flex h-full gap-6 min-w-max pb-4">
-                            {COLUMNS.map(col => (
-                                <Column
-                                    key={col.id}
-                                    id={col.id}
-                                    title={col.label}
-                                    tasks={activeProject.columns[col.id]}
-                                    onAddTask={(content) => addTask(col.id, content)}
-                                    onUpdateTask={updateTask}
-                                    onDeleteTask={deleteTask}
-                                    onAddChild={addChildTask}
-                                    onMoveToColumn={moveToColumn}
-                                    onClone={cloneTask}
-                                    wipLimit={col.id === 'in-progress' ? activeProject.wipLimit : undefined}
-                                    onUpdateWipLimit={col.id === 'in-progress' ? updateWipLimit : undefined}
-                                    currentWipCount={col.id === 'in-progress' ? wipCount : undefined}
-                                />
-                            ))}
-                        </div>
-                        <DragOverlay>
-                            {activeTask ? (
-                                <div className="opacity-90 rotate-2 cursor-grabbing">
-                                    <SortableTask
-                                        task={activeTask}
-                                        onDelete={() => { }}
-                                        onUpdate={() => { }}
-                                        onAddChild={() => { }}
-                                        onMoveToColumn={() => { }}
-                                        onClone={() => { }}
-                                    />
+            {activeProject ? (
+                <main className="flex-1 flex flex-col overflow-hidden relative">
+                    <header className="h-auto min-h-[4rem] border-b border-gray-200 dark:border-zinc-800 flex flex-col justify-center px-8 bg-white/50 dark:bg-zinc-950/50 backdrop-blur-md z-10 py-3">
+                        <div className="flex items-start justify-between">
+                            <div className="flex-1 mr-8">
+                                <div className="flex items-center gap-4 mb-1">
+                                    <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                                        {activeProject.name}
+                                    </h2>
+                                    <span className="px-2.5 py-0.5 rounded-full bg-gray-100 dark:bg-zinc-800 text-xs text-gray-500 dark:text-zinc-400 font-mono">
+                                        {Object.values(activeProject.columns).flat().length} Top-level Tasks
+                                    </span>
                                 </div>
-                            ) : null}
-                        </DragOverlay>
-                    </DndContext>
+                                {/* Project Description */}
+                                <input
+                                    className="w-full bg-transparent text-sm text-gray-500 dark:text-gray-400 focus:text-gray-800 dark:focus:text-gray-200 focus:outline-none border-b border-transparent focus:border-gray-200 dark:focus:border-zinc-700 transition-colors pb-0.5"
+                                    value={activeProject.description || ''}
+                                    onChange={(e) => updateProjectDescription(e.target.value)}
+                                    placeholder="Add a project description..."
+                                />
+                            </div>
+
+                            {/* Status Indicator & AI */}
+                            <div className="flex items-center gap-4">
+                                <Button
+                                    variant="ghost"
+                                    className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/10 hover:bg-indigo-100 dark:hover:bg-indigo-900/20"
+                                    onClick={() => setIsAiOpen(!isAiOpen)}
+                                >
+                                    <Sparkles size={16} />
+                                    AI Assist
+                                </Button>
+
+                                {saveStatus === 'saving' && <Loader2 size={16} className="animate-spin text-gray-400" />}
+                                {saveStatus === 'saved' && <CheckCircle2 size={16} className="text-green-500" />}
+                                {saveStatus === 'error' && <AlertCircle size={16} className="text-red-500" title="Sync Error" />}
+                            </div>
+                        </div>
+                    </header>
+
+                    <div className="flex-1 overflow-x-auto overflow-y-hidden p-6">
+                        <DndContext
+                            sensors={sensors}
+                            collisionDetection={closestCorners}
+                            onDragStart={onDragStart}
+                            onDragOver={() => { }} // Handle over in DragEnd for logic simplicity with trees
+                            onDragEnd={onDragEnd}
+                            dropAnimation={dropAnimation}
+                        >
+                            <div className="flex h-full gap-6 min-w-max pb-4">
+                                {COLUMNS.map(col => (
+                                    <Column
+                                        key={col.id}
+                                        id={col.id}
+                                        title={col.label}
+                                        tasks={activeProject.columns[col.id]}
+                                        onAddTask={(content) => addTask(col.id, content)}
+                                        onUpdateTask={updateTask}
+                                        onDeleteTask={deleteTask}
+                                        onAddChild={addChildTask}
+                                        onMoveToColumn={moveToColumn}
+                                        onClone={cloneTask}
+                                        wipLimit={col.id === 'in-progress' ? activeProject.wipLimit : undefined}
+                                        onUpdateWipLimit={col.id === 'in-progress' ? updateWipLimit : undefined}
+                                        currentWipCount={col.id === 'in-progress' ? wipCount : undefined}
+                                    />
+                                ))}
+                            </div>
+                            <DragOverlay>
+                                {activeTask ? (
+                                    <div className="opacity-90 rotate-2 cursor-grabbing">
+                                        <SortableTask
+                                            task={activeTask}
+                                            onDelete={() => { }}
+                                            onUpdate={() => { }}
+                                            onAddChild={() => { }}
+                                            onMoveToColumn={() => { }}
+                                            onClone={() => { }}
+                                        />
+                                    </div>
+                                ) : null}
+                            </DragOverlay>
+                        </DndContext>
+                    </div>
+                </main>
+            ) : (
+                <div className="flex-1 flex items-center justify-center text-gray-400">
+                    No Project Selected
                 </div>
-            </main>
+            )}
 
             {/* AI Chat */}
             <AIChat

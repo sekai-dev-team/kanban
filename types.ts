@@ -16,12 +16,14 @@ export interface Project {
     columns: {
         [key in ColumnId]: Task[];
     };
+    _version?: number;
 }
 
 export interface AppData {
     projects: Project[];
     activeProjectId: string | null;
     theme: 'light' | 'dark';
+    _version?: number;
 }
 
 export const COLUMNS: { id: ColumnId; label: string }[] = [
