@@ -1,755 +1,818 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import {
-    DndContext,
-    DragOverlay,
-    closestCorners,
-    KeyboardSensor,
-    PointerSensor,
-    useSensor,
-    useSensors,
-    DragStartEvent,
-    DragOverEvent,
-    DragEndEvent,
-    defaultDropAnimationSideEffects,
-    DropAnimation,
+// 引入 dnd-kit 库
+import { 
+  DndContext, 
+  DragOverlay, 
+  closestCorners, 
+  pointerWithin, // Changed: Use pointerWithin for strict cursor based detection
+  KeyboardSensor, 
+  PointerSensor, 
+  useSensor, 
+  useSensors,
+  DragStartEvent,
+  DragOverEvent,
+  DragEndEvent,
+  defaultDropAnimationSideEffects,
+  DropAnimation,
+  ClientRect,
 } from '@dnd-kit/core';
-import { arrayMove, sortableKeyboardCoordinates } from '@dnd-kit/sortable';
-import {
-    Plus, Layout, Moon, Sun, Database, CheckCircle2, Folder, Trash,
-    Loader2, Cloud, AlertCircle, Download, Search, Sparkles
+import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
+import { 
+  Plus, Layout, Moon, Sun, Database, CheckCircle2, Folder, Trash, 
+  Loader2, AlertCircle, Download, Search, Sparkles
 } from 'lucide-react';
 import { nanoid } from 'nanoid';
 
-// Local Imports
-import { Project, Task, COLUMNS, AppData, ColumnId } from './types';
+// 本地组件引用
+import { Project, Task, COLUMNS, AppData, ColumnId, DragState } from './types';
 import { saveToStorage, loadFromStorage, exportToYaml, parseYaml, saveToServer, downloadYaml } from './services/yamlService';
 import { Column } from './components/Column';
 import { SortableTask } from './components/SortableTask';
 import { Modal, Button, Input, TextArea } from './components/ui';
 import { AIChat } from './components/AIChat';
 
-// Helper to find task in recursive tree
+// --- 辅助函数区 ---
+
 const findTask = (tasks: Task[], id: string): Task | undefined => {
-    for (const task of tasks) {
-        if (task.id === id) return task;
-        if (task.children.length > 0) {
-            const found = findTask(task.children, id);
-            if (found) return found;
-        }
+  for (const task of tasks) {
+    if (task.id === id) return task; 
+    if (task.children.length > 0) {
+      const found = findTask(task.children, id);
+      if (found) return found;
     }
-    return undefined;
+  }
+  return undefined;
 };
 
-// Helper to remove task from tree
+// 检查 targetId 是否是 sourceId 的后代
+const isDescendant = (tasks: Task[], sourceId: string, targetId: string): boolean => {
+  const source = findTask(tasks, sourceId);
+  if (!source) return false;
+  return !!findTask(source.children, targetId);
+};
+
 const removeTask = (tasks: Task[], id: string): Task[] => {
-    return tasks.filter(t => t.id !== id).map(t => ({
-        ...t,
-        children: removeTask(t.children, id)
-    }));
+  return tasks.filter(t => t.id !== id).map(t => ({
+    ...t,
+    children: removeTask(t.children, id)
+  }));
 };
 
-// Helper to count leaves (for WIP)
 const countLeaves = (tasks: Task[]): number => {
-    let count = 0;
-    for (const t of tasks) {
-        if (t.children.length === 0) {
-            count++;
-        } else {
-            count += countLeaves(t.children);
-        }
+  let count = 0;
+  for (const t of tasks) {
+    if (t.children.length === 0) {
+      count++; 
+    } else {
+      count += countLeaves(t.children); 
     }
-    return count;
+  }
+  return count;
+};
+
+// Helper to strip sub-zone suffixes
+const getRealId = (id: string): string => {
+  if (id.endsWith('-top')) return id.replace('-top', '');
+  if (id.endsWith('-mid')) return id.replace('-mid', '');
+  if (id.endsWith('-bot')) return id.replace('-bot', '');
+  return id;
 };
 
 const dropAnimation: DropAnimation = {
-    sideEffects: defaultDropAnimationSideEffects({
-        styles: {
-            active: { opacity: '0.5' },
-        },
-    }),
+  sideEffects: defaultDropAnimationSideEffects({
+    styles: {
+      active: { opacity: '0.5' },
+    },
+  }),
 };
 
 export default function App() {
-    // State
-    const [data, setData] = useState<AppData>(loadFromStorage);
-    const [activeId, setActiveId] = useState<string | null>(null);
-    const [activeTask, setActiveTask] = useState<Task | null>(null);
-    const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [data, setData] = useState<AppData>(loadFromStorage);
+  
+  // DnD 状态
+  const [activeId, setActiveId] = useState<string | null>(null); 
+  const [activeTask, setActiveTask] = useState<Task | null>(null); 
+  
+  // ★ 视觉指示器状态
+  const [dragState, setDragState] = useState<DragState | null>(null);
 
-    // UI State
-    const [isYamlModalOpen, setIsYamlModalOpen] = useState(false);
-    const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
-    const [isAiOpen, setIsAiOpen] = useState(false);
-    const [projectToDelete, setProjectToDelete] = useState<string | null>(null);
-    const [newProjectName, setNewProjectName] = useState('');
-    const [yamlContent, setYamlContent] = useState('');
-    const [searchQuery, setSearchQuery] = useState('');
-    const [isSearchOpen, setIsSearchOpen] = useState(false);
+  // UI 状态
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [isYamlModalOpen, setIsYamlModalOpen] = useState(false);
+  const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
+  const [isAiOpen, setIsAiOpen] = useState(false);
+  const [projectToDelete, setProjectToDelete] = useState<string | null>(null);
+  const [newProjectName, setNewProjectName] = useState('');
+  const [yamlContent, setYamlContent] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
 
-    // Refs
-    const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
-    // Sensors
-    const sensors = useSensors(
-        useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-        useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
-    );
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }), 
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
 
-    // Derived State
-    const activeProject = useMemo(() =>
-        data.projects.find(p => p.id === data.activeProjectId) || data.projects[0]
-        , [data.projects, data.activeProjectId]);
+  const activeProject = useMemo(() => 
+    data.projects.find(p => p.id === data.activeProjectId) || data.projects[0]
+  , [data.projects, data.activeProjectId]);
 
-    const filteredProjects = data.projects.filter(p =>
-        p.name.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+  const filteredProjects = data.projects.filter(p => 
+    p.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
-    const wipCount = useMemo(() =>
-        activeProject ? countLeaves(activeProject.columns['in-progress']) : 0
-        , [activeProject]);
+  const wipCount = useMemo(() => 
+    activeProject ? countLeaves(activeProject.columns['in-progress']) : 0
+  , [activeProject]);
 
-    // Effects
-    useEffect(() => {
-        saveToStorage(data);
-        if (data.theme === 'dark') document.documentElement.classList.add('dark');
-        else document.documentElement.classList.remove('dark');
+  useEffect(() => {
+    saveToStorage(data); 
+    if (data.theme === 'dark') document.documentElement.classList.add('dark');
+    else document.documentElement.classList.remove('dark');
 
-        setSaveStatus('saving');
-        const timer = setTimeout(async () => {
-            try {
-                await saveToServer(data);
-                setSaveStatus('saved');
-            } catch (error) {
-                setSaveStatus('error');
-            }
-        }, 1000);
-        return () => clearTimeout(timer);
-    }, [data]);
+    setSaveStatus('saving');
+    const timer = setTimeout(async () => {
+      try {
+        await saveToServer(data);
+        setSaveStatus('saved');
+      } catch (error) {
+        setSaveStatus('error');
+      }
+    }, 1000);
+    return () => clearTimeout(timer); 
+  }, [data]);
 
-    // Keyboard Shortcuts
-    useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
-                e.preventDefault();
-                setIsSearchOpen(true);
-                setTimeout(() => searchInputRef.current?.focus(), 50);
-            }
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, []);
-
-    // --- Handlers: Project ---
-
-    const addProject = (e: React.FormEvent) => {
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
         e.preventDefault();
-        if (!newProjectName.trim()) return;
-        const newProject: Project = {
-            id: nanoid(),
-            name: newProjectName,
-            description: '',
-            wipLimit: 3,
-            columns: { backlog: [], todo: [], 'in-progress': [], done: [] }
+        setIsSearchOpen(true);
+        setTimeout(() => searchInputRef.current?.focus(), 50);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // --- 项目操作 Handlers ---
+  const addProject = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newProjectName.trim()) return;
+    const newProject: Project = {
+      id: nanoid(),
+      name: newProjectName,
+      description: '',
+      wipLimit: 3,
+      columns: { backlog: [], todo: [], 'in-progress': [], done: [] }
+    };
+    setData(prev => ({
+      ...prev,
+      projects: [...prev.projects, newProject],
+      activeProjectId: newProject.id
+    }));
+    setNewProjectName('');
+    setIsProjectModalOpen(false);
+  };
+
+  const updateProjectDescription = (desc: string) => {
+    setData(prev => ({
+      ...prev,
+      projects: prev.projects.map(p => p.id === activeProject.id ? { ...p, description: desc } : p)
+    }));
+  };
+
+  const updateWipLimit = (limit: number) => {
+    setData(prev => ({
+      ...prev,
+      projects: prev.projects.map(p => p.id === activeProject.id ? { ...p, wipLimit: limit } : p)
+    }));
+  };
+
+  const deleteProject = () => {
+    if (!projectToDelete) return;
+    setData(prev => {
+      const remaining = prev.projects.filter(p => p.id !== projectToDelete);
+      if (remaining.length === 0) return prev; 
+      return {
+        ...prev,
+        projects: remaining,
+        activeProjectId: prev.activeProjectId === projectToDelete ? remaining[0].id : prev.activeProjectId
+      };
+    });
+    setProjectToDelete(null);
+  };
+
+  // --- 任务操作 Handlers ---
+
+  const addTask = (columnId: ColumnId, content: string) => {
+    const newTask: Task = { id: nanoid(), content, createdAt: Date.now(), children: [] };
+    setData(prev => {
+      const projs = prev.projects.map(p => {
+        if (p.id !== activeProject.id) return p;
+        return {
+          ...p,
+          columns: {
+            ...p.columns,
+            [columnId]: [...p.columns[columnId], newTask]
+          }
         };
-        setData(prev => ({
-            ...prev,
-            projects: [...prev.projects, newProject],
-            activeProjectId: newProject.id
-        }));
-        setNewProjectName('');
-        setIsProjectModalOpen(false);
-    };
+      });
+      return { ...prev, projects: projs };
+    });
+  };
 
-    const updateProjectDescription = (desc: string) => {
-        setData(prev => ({
-            ...prev,
-            projects: prev.projects.map(p => p.id === activeProject.id ? { ...p, description: desc } : p)
-        }));
+  const updateTask = (taskId: string, updates: Partial<Task>) => {
+    const updateRecursive = (tasks: Task[]): Task[] => {
+      return tasks.map(t => {
+        if (t.id === taskId) return { ...t, ...updates };
+        return { ...t, children: updateRecursive(t.children) };
+      });
     };
-
-    const updateWipLimit = (limit: number) => {
-        setData(prev => ({
-            ...prev,
-            projects: prev.projects.map(p => p.id === activeProject.id ? { ...p, wipLimit: limit } : p)
-        }));
-    };
-
-    const deleteProject = () => {
-        if (!projectToDelete) return;
-        setData(prev => {
-            const remaining = prev.projects.filter(p => p.id !== projectToDelete);
-            if (remaining.length === 0) return prev;
-            return {
-                ...prev,
-                projects: remaining,
-                activeProjectId: prev.activeProjectId === projectToDelete ? remaining[0].id : prev.activeProjectId
-            };
+    setData(prev => ({
+      ...prev,
+      projects: prev.projects.map(p => {
+        if (p.id !== activeProject.id) return p;
+        const newCols = { ...p.columns };
+        (Object.keys(newCols) as ColumnId[]).forEach(k => {
+          newCols[k] = updateRecursive(newCols[k]);
         });
-        setProjectToDelete(null);
+        return { ...p, columns: newCols };
+      })
+    }));
+  };
+
+  const addChildTask = (parentId: string, content: string) => {
+    const newChild: Task = { id: nanoid(), content, createdAt: Date.now(), children: [] };
+    const addRecursive = (tasks: Task[]): Task[] => {
+      return tasks.map(t => {
+        if (t.id === parentId) return { ...t, children: [...t.children, newChild], isExpanded: true };
+        return { ...t, children: addRecursive(t.children) };
+      });
     };
-
-    // --- Handlers: Tasks ---
-
-    const addTask = (columnId: ColumnId, content: string) => {
-        const newTask: Task = { id: nanoid(), content, createdAt: Date.now(), children: [] };
-        setData(prev => {
-            const projs = prev.projects.map(p => {
-                if (p.id !== activeProject.id) return p;
-                return {
-                    ...p,
-                    columns: {
-                        ...p.columns,
-                        [columnId]: [...p.columns[columnId], newTask]
-                    }
-                };
-            });
-            return { ...prev, projects: projs };
+    setData(prev => ({
+      ...prev,
+      projects: prev.projects.map(p => {
+        if (p.id !== activeProject.id) return p;
+        const newCols = { ...p.columns };
+        (Object.keys(newCols) as ColumnId[]).forEach(k => {
+          newCols[k] = addRecursive(newCols[k]);
         });
+        return { ...p, columns: newCols };
+      })
+    }));
+  };
+
+  const deleteTask = (taskId: string) => {
+    setData(prev => ({
+      ...prev,
+      projects: prev.projects.map(p => {
+        if (p.id !== activeProject.id) return p;
+        const newCols = { ...p.columns };
+        (Object.keys(newCols) as ColumnId[]).forEach(k => {
+          newCols[k] = removeTask(newCols[k], taskId); 
+        });
+        return { ...p, columns: newCols };
+      })
+    }));
+  };
+
+  const moveToColumn = (taskId: string, targetColId: ColumnId) => {
+    let taskToMove: Task | undefined;
+    const removeRecursive = (tasks: Task[]): Task[] => {
+       const filtered = [];
+       for (const t of tasks) {
+         if (t.id === taskId) {
+           taskToMove = t;
+         } else {
+           filtered.push({ ...t, children: removeRecursive(t.children) });
+         }
+       }
+       return filtered;
     };
 
-    const updateTask = (taskId: string, updates: Partial<Task>) => {
-        const updateRecursive = (tasks: Task[]): Task[] => {
-            return tasks.map(t => {
-                if (t.id === taskId) return { ...t, ...updates };
-                return { ...t, children: updateRecursive(t.children) };
+    setData(prev => {
+        const projs = prev.projects.map(p => {
+            if (p.id !== activeProject.id) return p;
+            const tempCols = { ...p.columns };
+            let foundTask: Task | undefined;
+            (Object.keys(tempCols) as ColumnId[]).forEach(k => {
+                 const find = findTask(tempCols[k], taskId);
+                 if(find) foundTask = find;
             });
-        };
-        setData(prev => ({
-            ...prev,
-            projects: prev.projects.map(p => {
-                if (p.id !== activeProject.id) return p;
-                const newCols = { ...p.columns };
-                (Object.keys(newCols) as ColumnId[]).forEach(k => {
-                    newCols[k] = updateRecursive(newCols[k]);
-                });
-                return { ...p, columns: newCols };
-            })
-        }));
-    };
 
-    const addChildTask = (parentId: string, content: string) => {
-        const newChild: Task = { id: nanoid(), content, createdAt: Date.now(), children: [] };
-        const addRecursive = (tasks: Task[]): Task[] => {
-            return tasks.map(t => {
-                if (t.id === parentId) return { ...t, children: [...t.children, newChild], isExpanded: true };
-                return { ...t, children: addRecursive(t.children) };
-            });
-        };
-        setData(prev => ({
-            ...prev,
-            projects: prev.projects.map(p => {
-                if (p.id !== activeProject.id) return p;
-                const newCols = { ...p.columns };
-                (Object.keys(newCols) as ColumnId[]).forEach(k => {
-                    newCols[k] = addRecursive(newCols[k]);
-                });
-                return { ...p, columns: newCols };
-            })
-        }));
-    };
-
-    const deleteTask = (taskId: string) => {
-        setData(prev => ({
-            ...prev,
-            projects: prev.projects.map(p => {
-                if (p.id !== activeProject.id) return p;
-                const newCols = { ...p.columns };
-                (Object.keys(newCols) as ColumnId[]).forEach(k => {
-                    newCols[k] = removeTask(newCols[k], taskId);
-                });
-                return { ...p, columns: newCols };
-            })
-        }));
-    };
-
-    const moveToColumn = (taskId: string, targetColId: ColumnId) => {
-        let taskToMove: Task | undefined;
-
-        // 1. Find and Remove
-        const removeRecursive = (tasks: Task[]): Task[] => {
-            const filtered = [];
-            for (const t of tasks) {
-                if (t.id === taskId) {
-                    taskToMove = t;
-                } else {
-                    filtered.push({ ...t, children: removeRecursive(t.children) });
+            if (targetColId === 'in-progress' && foundTask) {
+                const currentLeaves = countLeaves(tempCols['in-progress']);
+                const incomingLeaves = foundTask.children.length === 0 ? 1 : countLeaves(foundTask.children);
+                if (currentLeaves + incomingLeaves > p.wipLimit) {
+                    alert(`WIP Limit Reached! Limit: ${p.wipLimit}`);
+                    return p;
                 }
             }
-            return filtered;
-        };
 
-        // 2. Add to Target
-        setData(prev => {
-            const projs = prev.projects.map(p => {
-                if (p.id !== activeProject.id) return p;
-
-                // Check WIP
-                const tempCols = { ...p.columns };
-                let foundTask: Task | undefined;
-                (Object.keys(tempCols) as ColumnId[]).forEach(k => {
-                    const find = findTask(tempCols[k], taskId);
-                    if (find) foundTask = find;
-                });
-
-                if (targetColId === 'in-progress' && foundTask) {
-                    const currentLeaves = countLeaves(tempCols['in-progress']);
-                    const incomingLeaves = foundTask.children.length === 0 ? 1 : countLeaves(foundTask.children);
-                    if (currentLeaves + incomingLeaves > p.wipLimit) {
-                        alert(`WIP Limit Reached! Cannot move task to In Progress. Limit: ${p.wipLimit}`);
-                        return p;
-                    }
-                }
-
-                const newCols = { ...p.columns };
-                (Object.keys(newCols) as ColumnId[]).forEach(k => {
-                    newCols[k] = removeRecursive(newCols[k]);
-                });
-
-                if (taskToMove) {
-                    newCols[targetColId] = [...newCols[targetColId], taskToMove];
-                }
-                return { ...p, columns: newCols };
+            const newCols = { ...p.columns };
+            (Object.keys(newCols) as ColumnId[]).forEach(k => {
+                newCols[k] = removeRecursive(newCols[k]);
             });
-            return { ...prev, projects: projs };
+
+            if (taskToMove) {
+                newCols[targetColId] = [...newCols[targetColId], taskToMove];
+            }
+            return { ...p, columns: newCols };
         });
-    };
+        return { ...prev, projects: projs };
+    });
+  };
 
-    const cloneTask = (taskId: string) => {
-        const deepClone = (t: Task): Task => ({
-            ...t,
-            id: nanoid(),
-            content: `${t.content} (Copy)`,
-            children: t.children.map(deepClone)
-        });
+  const cloneTask = (taskId: string) => {
+     const deepClone = (t: Task): Task => ({
+        ...t, 
+        id: nanoid(), 
+        content: `${t.content} (Copy)`, 
+        children: t.children.map(deepClone)
+     });
 
-        setData(prev => {
-            const projs = prev.projects.map(p => {
-                if (p.id !== activeProject.id) return p;
-                const newCols = { ...p.columns };
-                let foundClone: Task | undefined;
+     setData(prev => {
+         const projs = prev.projects.map(p => {
+             if (p.id !== activeProject.id) return p;
+             const newCols = { ...p.columns };
+             let foundClone: Task | undefined;
+             (Object.keys(newCols) as ColumnId[]).forEach(k => {
+                 const t = findTask(newCols[k], taskId);
+                 if(t) foundClone = deepClone(t);
+             });
 
-                (Object.keys(newCols) as ColumnId[]).forEach(k => {
-                    const t = findTask(newCols[k], taskId);
-                    if (t) foundClone = deepClone(t);
-                });
+             if(foundClone) {
+                 (Object.keys(newCols) as ColumnId[]).forEach(k => {
+                     if(findTask(newCols[k], taskId)) {
+                         newCols[k] = [...newCols[k], foundClone!];
+                     }
+                 });
+             }
+             return { ...p, columns: newCols };
+         });
+         return { ...prev, projects: projs };
+     });
+  };
 
-                if (foundClone) {
-                    (Object.keys(newCols) as ColumnId[]).forEach(k => {
-                        if (findTask(newCols[k], taskId)) {
-                            newCols[k] = [...newCols[k], foundClone!];
-                        }
-                    });
-                }
-                return { ...p, columns: newCols };
-            });
-            return { ...prev, projects: projs };
-        });
-    };
+  // --- 核心重构：拖拽逻辑 (Indicator Based DnD) ---
 
-    // --- DnD Handlers ---
+  const onDragStart = (event: DragStartEvent) => {
+    const { active } = event;
+    setActiveId(active.id as string);
+    let task: Task | undefined;
+    (Object.keys(activeProject.columns) as ColumnId[]).forEach(k => {
+        const found = findTask(activeProject.columns[k], active.id as string);
+        if(found) task = found;
+    });
+    setActiveTask(task || null);
+  };
 
-    const onDragStart = (event: DragStartEvent) => {
-        const { active } = event;
-        setActiveId(active.id as string);
-        let task: Task | undefined;
-        (Object.keys(activeProject.columns) as ColumnId[]).forEach(k => {
-            const found = findTask(activeProject.columns[k], active.id as string);
-            if (found) task = found;
-        });
-        setActiveTask(task || null);
-    };
+  // ★ DragOver: 计算 DragState (Visual)
+  const onDragOver = (event: DragOverEvent) => {
+    const { active, over } = event;
+    const isClone = (event.activatorEvent as any)?.ctrlKey; 
+    
+    if (!over || isClone) {
+      setDragState(null);
+      return;
+    }
 
-    const onDragEnd = (event: DragEndEvent) => {
-        const { active, over } = event;
-        setActiveId(null);
-        setActiveTask(null);
+    const activeId = active.id as string;
+    const rawOverId = over.id as string;
+    const overId = getRealId(rawOverId);
 
-        if (!over) return;
+    // 自指检测
+    if (activeId === overId) {
+      setDragState(null);
+      return;
+    }
 
-        const activeId = active.id as string;
-        const overId = over.id as string;
+    // 后代检测
+    const allTasks = Object.values(activeProject.columns).flat();
+    if (isDescendant(allTasks, activeId, overId)) {
+      setDragState(null);
+      return;
+    }
 
-        setData(prev => {
-            const projs = prev.projects.map(p => {
-                if (p.id !== activeProject.id) return p;
+    // 1. 如果 Over 的是 Column 本身 (e.g. 标题、底部空白)
+    if (Object.keys(activeProject.columns).includes(rawOverId)) {
+      const columnId = rawOverId as ColumnId;
+      const tasksInColumn = activeProject.columns[columnId];
+      
+      const overTop = over.rect.top;
+      // Use active rect center to decide top vs bottom of column
+      const activeCenterY = active.rect.current.translated!.top + (active.rect.current.translated!.height / 2);
+      
+      // Header threshold: let's say 50px from top of column
+      const headerThreshold = overTop + 50; 
+      
+      if (activeCenterY < headerThreshold) {
+         // Insert at top of column
+         setDragState({ type: 'insert', position: 'top', targetId: rawOverId });
+      } else {
+         // Insert at bottom of column
+         // If there are tasks, target the last one for better visual placement
+         // This ensures the blue line appears right after the last card, not at the bottom of the container
+         if (tasksInColumn.length > 0) {
+             const lastTask = tasksInColumn[tasksInColumn.length - 1];
+             // Don't target self if dragging the last item
+             if (lastTask.id !== activeId) {
+                setDragState({ type: 'insert', position: 'bottom', targetId: lastTask.id });
+                return;
+             }
+         }
+         // Fallback for empty column or if last task is self (just show column bottom line)
+         setDragState({ type: 'insert', position: 'bottom', targetId: rawOverId });
+      }
+      return;
+    }
 
-                const newCols = { ...p.columns };
-                let taskObj: Task | undefined;
+    // 2. 如果 Over 的是 Task Zone (Explicit Zones)
+    // 根据后缀判断意图，不再进行坐标计算！
+    if (rawOverId.endsWith('-top')) {
+      setDragState({ type: 'insert', position: 'top', targetId: overId });
+      return;
+    }
+    if (rawOverId.endsWith('-mid')) {
+      setDragState({ type: 'nest', targetId: overId });
+      return;
+    }
+    if (rawOverId.endsWith('-bot')) {
+      setDragState({ type: 'insert', position: 'bottom', targetId: overId });
+      return;
+    }
+    
+    // 3. Fallback: 如果碰到了 Task Container 本身 (可能是因为缝隙或者 margin)
+    // 默认认为 Nest (或者不做处理，防止闪烁)
+    setDragState({ type: 'nest', targetId: overId });
+  };
 
-                // Is this a clone operation?
-                const isClone = (event.activatorEvent as any)?.ctrlKey;
+  // ★ DragEnd: 提交修改
+  const onDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    
+    setActiveId(null);
+    setActiveTask(null);
+    const finalDragState = dragState; 
+    setDragState(null);
 
-                // Helper to remove task and grab it
-                const removeAndGet = (list: Task[]): Task[] => {
-                    const res: Task[] = [];
-                    for (const t of list) {
-                        if (t.id === activeId) {
-                            taskObj = isClone ? { ...t, id: nanoid(), children: [] } : t;
-                            if (isClone) res.push(t);
-                        } else {
-                            res.push({ ...t, children: removeAndGet(t.children) });
-                        }
-                    }
-                    return res;
-                };
+    if (!over) return;
 
-                // 1. Remove Source Task
-                (Object.keys(newCols) as ColumnId[]).forEach(k => {
-                    newCols[k] = removeAndGet(newCols[k]);
-                });
+    const isClone = (event.activatorEvent as any)?.ctrlKey;
+    
+    setData(prev => {
+        const activeProj = prev.projects.find(p => p.id === activeProject.id);
+        if (!activeProj) return prev;
+        
+        const newCols = JSON.parse(JSON.stringify(activeProj.columns)); 
 
-                // If we failed to find the task (shouldn't happen), abort to prevent data loss
-                if (!taskObj) return p;
+        // A. 准备待移动任务
+        let taskToMove: Task | null = null;
 
-                // 2. Identify Target
-                const isOverColumn = Object.keys(newCols).includes(overId);
+        if (isClone) {
+           const findOriginal = (tasks: Task[]): Task | undefined => {
+              for (const t of tasks) {
+                 if (t.id === active.id) return t;
+                 const f = findOriginal(t.children);
+                 if (f) return f;
+              }
+              return undefined;
+           };
+           const original = findOriginal(Object.values(activeProj.columns).flat());
+           if (original) {
+               const deepCloneTask = (t: Task): Task => ({
+                   ...t,
+                   id: nanoid(),
+                   content: t.content, 
+                   children: t.children.map(deepCloneTask)
+               });
+               taskToMove = deepCloneTask(original);
+           }
+        } else {
+           const removeFromTree = (tasks: Task[]): Task[] => {
+              const res: Task[] = [];
+              for (const t of tasks) {
+                 if (t.id === active.id) {
+                    taskToMove = t; 
+                 } else {
+                    t.children = removeFromTree(t.children);
+                    res.push(t);
+                 }
+              }
+              return res;
+           };
+           (Object.keys(newCols) as ColumnId[]).forEach(k => {
+               newCols[k] = removeFromTree(newCols[k]);
+           });
+        }
 
-                if (isOverColumn) {
-                    // Case A: Drop on Column
-                    const targetColId = overId as ColumnId;
+        if (!taskToMove) return prev; 
 
-                    // Check WIP
-                    if (targetColId === 'in-progress') {
-                        const leaves = countLeaves(newCols['in-progress']);
-                        const taskLeaves = taskObj.children.length === 0 ? 1 : countLeaves(taskObj.children);
-                        if (leaves + taskLeaves > p.wipLimit) return p;
-                    }
+        // B. 执行插入
+        if (finalDragState) {
+            const { targetId, type, position } = finalDragState;
 
-                    newCols[targetColId].push(taskObj);
+            // 情况1: 目标是 Column
+            if (Object.keys(newCols).includes(targetId)) {
+                if (position === 'top') {
+                    newCols[targetId].unshift(taskToMove);
                 } else {
-                    // Case B: Drop on another Task
-                    // Find where the 'over' task is in the tree
-                    let targetLocation: { list: Task[], index: number, parent?: Task } | null = null;
-                    let targetColId: ColumnId | undefined;
-
-                    const findInTree = (list: Task[], colId: ColumnId): { list: Task[], index: number, parent?: Task } | null => {
-                        const idx = list.findIndex(t => t.id === overId);
-                        if (idx !== -1) return { list, index: idx };
-
-                        for (const t of list) {
-                            const res = findInTree(t.children, colId);
-                            if (res) return { ...res, parent: t };
+                    if (targetId === 'in-progress') {
+                        const currentLeaves = countLeaves(newCols['in-progress']);
+                        const incomingLeaves = (taskToMove as Task).children.length === 0 ? 1 : countLeaves((taskToMove as Task).children);
+                        if (currentLeaves + incomingLeaves > activeProj.wipLimit && !isClone) {
+                             // Limit handling logic
                         }
-                        return null;
-                    };
-
-                    (Object.keys(newCols) as ColumnId[]).forEach(k => {
-                        const res = findInTree(newCols[k], k);
-                        if (res) {
-                            targetLocation = res;
-                            targetColId = k;
-                        }
-                    });
-
-                    if (targetLocation && targetColId) {
-                        const { list, index, parent } = targetLocation;
-                        const targetTask = list[index];
-
-                        // Check WIP
-                        if (targetColId === 'in-progress') {
-                            const leaves = countLeaves(newCols['in-progress']);
-                            const taskLeaves = taskObj.children.length === 0 ? 1 : countLeaves(taskObj.children);
-                            if (leaves + taskLeaves > p.wipLimit) return p;
-                        }
-
-                        // Decision: Nest or Reorder?
-                        // We check vertical position relative to the target rect.
-                        const activeRect = active.rect.current.translated;
-                        const overRect = over.rect; // dnd-kit rect for the over element
-
-                        let action: 'before' | 'after' | 'nest' = 'after';
-
-                        if (activeRect && overRect) {
-                            const overTop = overRect.top;
-                            const overHeight = overRect.height;
-                            const activeCenter = activeRect.top + (activeRect.height / 2);
-
-                            // Thresholds: Top 25% -> Before, Bottom 25% -> After, Middle 50% -> Nest
-                            const topThreshold = overTop + (overHeight * 0.25);
-                            const bottomThreshold = overTop + (overHeight * 0.75);
-
-                            if (activeCenter < topThreshold) {
-                                action = 'before';
-                            } else if (activeCenter > bottomThreshold) {
-                                action = 'after';
-                            } else {
-                                // Middle zone
-                                action = 'nest';
-                            }
-                        }
-
-                        // Special case: Cannot nest clone easily if we want to keep it simple, but requirement says "drag to center to child".
-                        // If action is nest, push to children.
-                        if (action === 'nest' && !isClone) {
-                            targetTask.children.push(taskObj);
-                            targetTask.isExpanded = true;
-                        } else {
-                            // Reorder
-                            // If 'before', insert at index.
-                            // If 'after', insert at index + 1.
-                            const insertIndex = action === 'before' ? index : index + 1;
-                            list.splice(insertIndex, 0, taskObj);
-                        }
-                    } else {
-                        // Fallback: If we hovered over something but couldn't find it in tree (rare race condition),
-                        // put it back in source (or first col). 
-                        // Best effort: Add to Backlog.
-                        newCols['backlog'].push(taskObj);
                     }
+                    newCols[targetId].push(taskToMove);
                 }
+                return { ...prev, projects: prev.projects.map(p => p.id === activeProject.id ? { ...p, columns: newCols } : p) };
+            }
 
-                return { ...p, columns: newCols };
-            });
-            return { ...prev, projects: projs };
-        });
-    };
+            // 情况2: 目标是 Task (Nest / Insert)
+            const findTargetAndAction = (tasks: Task[]) => {
+                 for (let i = 0; i < tasks.length; i++) {
+                     const t = tasks[i];
+                     if (t.id === targetId) {
+                         if (type === 'nest') {
+                             t.children.push(taskToMove!);
+                             t.isExpanded = true; 
+                         } else if (type === 'insert') {
+                             const index = position === 'top' ? i : i + 1;
+                             tasks.splice(index, 0, taskToMove!);
+                         }
+                         return true; 
+                     }
+                     if (findTargetAndAction(t.children)) return true;
+                 }
+                 return false;
+             };
 
+             let handled = false;
+             (Object.keys(newCols) as ColumnId[]).forEach(k => {
+                 if (!handled) handled = findTargetAndAction(newCols[k]);
+             });
+             
+             if (!handled) {
+                 newCols['backlog'].push(taskToMove); 
+             }
+        } else {
+            // Fallback (e.g. dropped on background)
+            if (!isClone) {
+                 newCols['backlog'].push(taskToMove);
+            }
+        }
 
-    return (
-        <div className="flex h-screen bg-gray-50 dark:bg-zinc-950 text-slate-900 dark:text-gray-100 font-sans overflow-hidden">
+        return { ...prev, projects: prev.projects.map(p => p.id === activeProject.id ? { ...p, columns: newCols } : p) };
+    });
+  };
 
-            {/* Sidebar */}
-            <aside className={`w-64 bg-white dark:bg-zinc-900 border-r border-gray-200 dark:border-zinc-800 flex flex-col z-20 shadow-sm transition-all duration-300 ${isSearchOpen ? 'w-72' : ''}`}>
-                <div className="p-6 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-lg flex items-center justify-center">
-                            <Layout size={18} strokeWidth={2.5} />
-                        </div>
-                        <h1 className="font-bold text-lg tracking-tight">Sekai Board</h1>
-                    </div>
+  // --- 渲染 ---
+  return (
+    <div className="flex h-screen bg-gray-50 dark:bg-zinc-950 text-slate-900 dark:text-gray-100 font-sans overflow-hidden">
+      
+      {/* Sidebar */}
+      <aside className={`w-64 bg-white dark:bg-zinc-900 border-r border-gray-200 dark:border-zinc-800 flex flex-col z-20 shadow-sm transition-all duration-300 ${isSearchOpen ? 'w-72' : ''}`}>
+        <div className="p-6 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-lg flex items-center justify-center">
+                    <Layout size={18} strokeWidth={2.5} />
                 </div>
+                <h1 className="font-bold text-lg tracking-tight">ZenBoard</h1>
+            </div>
+        </div>
 
-                {/* Project Search */}
-                <div className="px-4 mb-2">
-                    <div className="relative group">
-                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                        <input
-                            ref={searchInputRef}
-                            type="text"
-                            placeholder="Search projects (Ctrl+K)"
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            onFocus={() => setIsSearchOpen(true)}
-                            onBlur={() => setTimeout(() => setIsSearchOpen(false), 200)}
-                            className="w-full pl-9 pr-3 py-2 bg-gray-50 dark:bg-zinc-800/50 border border-gray-200 dark:border-zinc-700 rounded-lg text-sm focus:outline-none focus:border-blue-500 transition-all"
-                        />
+        {/* Project Search */}
+        <div className="px-4 mb-2">
+            <div className="relative group">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input 
+                    ref={searchInputRef}
+                    type="text" 
+                    placeholder="Search projects (Ctrl+K)" 
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onFocus={() => setIsSearchOpen(true)}
+                    onBlur={() => setTimeout(() => setIsSearchOpen(false), 200)}
+                    className="w-full pl-9 pr-3 py-2 bg-gray-50 dark:bg-zinc-800/50 border border-gray-200 dark:border-zinc-700 rounded-lg text-sm focus:outline-none focus:border-blue-500 transition-all"
+                />
+            </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-4 py-2 space-y-1">
+            <div className="text-xs font-semibold text-gray-400 dark:text-zinc-500 uppercase tracking-wider mb-2 px-2">Projects</div>
+            {filteredProjects.map(project => (
+                <div 
+                    key={project.id}
+                    onClick={() => {
+                        setData(p => ({...p, activeProjectId: project.id}));
+                        setSearchQuery('');
+                    }}
+                    className={`group flex items-center justify-between px-3 py-2.5 rounded-lg text-sm cursor-pointer transition-all ${
+                        project.id === activeProject.id 
+                        ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white font-medium' 
+                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-zinc-800/50 hover:text-gray-900 dark:hover:text-gray-200'
+                    }`}
+                >
+                    <div className="flex items-center gap-2 truncate">
+                        <Folder size={16} className={project.id === activeProject.id ? 'fill-current opacity-20' : ''} />
+                        <span className="truncate">{project.name}</span>
                     </div>
-                </div>
-
-                <div className="flex-1 overflow-y-auto px-4 py-2 space-y-1">
-                    <div className="text-xs font-semibold text-gray-400 dark:text-zinc-500 uppercase tracking-wider mb-2 px-2">Projects</div>
-                    {filteredProjects.map(project => (
-                        <div
-                            key={project.id}
-                            onClick={() => {
-                                setData(p => ({ ...p, activeProjectId: project.id }));
-                                setSearchQuery('');
-                            }}
-                            className={`group flex items-center justify-between px-3 py-2.5 rounded-lg text-sm cursor-pointer transition-all ${project.id === activeProject.id
-                                ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white font-medium'
-                                : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-zinc-800/50 hover:text-gray-900 dark:hover:text-gray-200'
-                                }`}
+                    {data.projects.length > 1 && (
+                        <button 
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setProjectToDelete(project.id); }}
+                            className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-red-100 dark:hover:bg-red-900/30 text-red-500 rounded transition-all focus:opacity-100 focus:outline-none"
                         >
-                            <div className="flex items-center gap-2 truncate">
-                                <Folder size={16} className={project.id === activeProject.id ? 'fill-current opacity-20' : ''} />
-                                <span className="truncate">{project.name}</span>
-                            </div>
-                            {data.projects.length > 1 && (
-                                <button
-                                    type="button"
-                                    onClick={(e) => { e.stopPropagation(); setProjectToDelete(project.id); }}
-                                    className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-red-100 dark:hover:bg-red-900/30 text-red-500 rounded transition-all focus:opacity-100 focus:outline-none"
-                                >
-                                    <Trash size={12} className="pointer-events-none" />
-                                </button>
-                            )}
-                        </div>
+                            <Trash size={12} className="pointer-events-none" />
+                        </button>
+                    )}
+                </div>
+            ))}
+        </div>
+
+        <div className="p-4 border-t border-gray-200 dark:border-zinc-800 space-y-2">
+            <Button variant="ghost" className="w-full flex items-center justify-start gap-2 px-3 py-2.5" onClick={() => setIsProjectModalOpen(true)}>
+                <Plus size={16} />
+                <span>New Project</span>
+            </Button>
+            <Button variant="ghost" className="w-full flex items-center justify-start gap-2 px-3 py-2.5" onClick={() => {
+                setYamlContent(exportToYaml(data));
+                setIsYamlModalOpen(true);
+            }}>
+                <Database size={16} />
+                <span>Data / YAML</span>
+            </Button>
+            <Button variant="ghost" className="w-full flex items-center justify-start gap-2 px-3 py-2.5" onClick={() => setData(p => ({...p, theme: p.theme === 'light' ? 'dark' : 'light'}))}>
+                {data.theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
+                <span>{data.theme === 'light' ? 'Dark Mode' : 'Light Mode'}</span>
+            </Button>
+        </div>
+      </aside>
+
+      {/* Main Board */}
+      <main className="flex-1 flex flex-col overflow-hidden relative">
+        <header className="h-auto min-h-[4rem] border-b border-gray-200 dark:border-zinc-800 flex flex-col justify-center px-8 bg-white/50 dark:bg-zinc-950/50 backdrop-blur-md z-10 py-3">
+            <div className="flex items-start justify-between">
+                <div className="flex-1 mr-8">
+                    <div className="flex items-center gap-4 mb-1">
+                        <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                            {activeProject.name}
+                        </h2>
+                        <span className="px-2.5 py-0.5 rounded-full bg-gray-100 dark:bg-zinc-800 text-xs text-gray-500 dark:text-zinc-400 font-mono">
+                            {Object.values(activeProject.columns).flat().length} Top-level Tasks
+                        </span>
+                    </div>
+                    <input 
+                        className="w-full bg-transparent text-sm text-gray-500 dark:text-gray-400 focus:text-gray-800 dark:focus:text-gray-200 focus:outline-none border-b border-transparent focus:border-gray-200 dark:focus:border-zinc-700 transition-colors pb-0.5"
+                        value={activeProject.description || ''}
+                        onChange={(e) => updateProjectDescription(e.target.value)}
+                        placeholder="Add a project description..."
+                    />
+                </div>
+                
+                <div className="flex items-center gap-4">
+                     <Button 
+                        variant="ghost" 
+                        className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/10 hover:bg-indigo-100 dark:hover:bg-indigo-900/20"
+                        onClick={() => setIsAiOpen(!isAiOpen)}
+                     >
+                        <Sparkles size={16} />
+                        AI Assist
+                     </Button>
+
+                     {saveStatus === 'saving' && <Loader2 size={16} className="animate-spin text-gray-400" />}
+                     {saveStatus === 'saved' && <CheckCircle2 size={16} className="text-green-500" />}
+                     {saveStatus === 'error' && <AlertCircle size={16} className="text-red-500" />}
+                </div>
+            </div>
+        </header>
+
+        <div className="flex-1 overflow-x-auto overflow-y-hidden p-6">
+            <DndContext
+                sensors={sensors}
+                collisionDetection={pointerWithin} // Use pointerWithin!
+                onDragStart={onDragStart}
+                onDragOver={onDragOver}
+                onDragEnd={onDragEnd}
+            >
+                <div className="flex h-full gap-6 min-w-max pb-4">
+                    {COLUMNS.map(col => (
+                        <Column
+                            key={col.id}
+                            id={col.id}
+                            title={col.label}
+                            tasks={activeProject.columns[col.id]}
+                            onAddTask={(content) => addTask(col.id, content)}
+                            onUpdateTask={updateTask}
+                            onDeleteTask={deleteTask}
+                            onAddChild={addChildTask}
+                            onMoveToColumn={moveToColumn}
+                            onClone={cloneTask}
+                            wipLimit={col.id === 'in-progress' ? activeProject.wipLimit : undefined}
+                            onUpdateWipLimit={col.id === 'in-progress' ? updateWipLimit : undefined}
+                            currentWipCount={col.id === 'in-progress' ? wipCount : undefined}
+                            dragState={dragState} 
+                        />
                     ))}
                 </div>
-
-                <div className="p-4 border-t border-gray-200 dark:border-zinc-800 space-y-2">
-                    <Button variant="ghost" className="w-full flex items-center justify-start gap-2 px-3 py-2.5" onClick={() => setIsProjectModalOpen(true)}>
-                        <Plus size={16} />
-                        <span>New Project</span>
-                    </Button>
-                    <Button variant="ghost" className="w-full flex items-center justify-start gap-2 px-3 py-2.5" onClick={() => {
-                        setYamlContent(exportToYaml(data));
-                        setIsYamlModalOpen(true);
-                    }}>
-                        <Database size={16} />
-                        <span>Data / YAML</span>
-                    </Button>
-                    <Button variant="ghost" className="w-full flex items-center justify-start gap-2 px-3 py-2.5" onClick={() => setData(p => ({ ...p, theme: p.theme === 'light' ? 'dark' : 'light' }))}>
-                        {data.theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
-                        <span>{data.theme === 'light' ? 'Dark Mode' : 'Light Mode'}</span>
-                    </Button>
-                </div>
-            </aside>
-
-            {/* Main Board Area */}
-            <main className="flex-1 flex flex-col overflow-hidden relative">
-                <header className="h-auto min-h-[4rem] border-b border-gray-200 dark:border-zinc-800 flex flex-col justify-center px-8 bg-white/50 dark:bg-zinc-950/50 backdrop-blur-md z-10 py-3">
-                    <div className="flex items-start justify-between">
-                        <div className="flex-1 mr-8">
-                            <div className="flex items-center gap-4 mb-1">
-                                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-                                    {activeProject.name}
-                                </h2>
-                                <span className="px-2.5 py-0.5 rounded-full bg-gray-100 dark:bg-zinc-800 text-xs text-gray-500 dark:text-zinc-400 font-mono">
-                                    {Object.values(activeProject.columns).flat().length} Top-level Tasks
-                                </span>
-                            </div>
-                            {/* Project Description */}
-                            <input
-                                className="w-full bg-transparent text-sm text-gray-500 dark:text-gray-400 focus:text-gray-800 dark:focus:text-gray-200 focus:outline-none border-b border-transparent focus:border-gray-200 dark:focus:border-zinc-700 transition-colors pb-0.5"
-                                value={activeProject.description || ''}
-                                onChange={(e) => updateProjectDescription(e.target.value)}
-                                placeholder="Add a project description..."
-                            />
+                <DragOverlay dropAnimation={dropAnimation}>
+                    {activeTask ? (
+                        <div className="opacity-90 rotate-2 cursor-grabbing">
+                             <SortableTask 
+                                task={activeTask} 
+                                onDelete={()=>{}} 
+                                onUpdate={()=>{}} 
+                                onAddChild={()=>{}} 
+                                onMoveToColumn={()=>{}}
+                                onClone={()=>{}}
+                                dragState={null}
+                                isOverlay={true} // Inform that this is overlay
+                             />
                         </div>
-
-                        {/* Status Indicator & AI */}
-                        <div className="flex items-center gap-4">
-                            <Button
-                                variant="ghost"
-                                className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/10 hover:bg-indigo-100 dark:hover:bg-indigo-900/20"
-                                onClick={() => setIsAiOpen(!isAiOpen)}
-                            >
-                                <Sparkles size={16} />
-                                AI Assist
-                            </Button>
-
-                            {saveStatus === 'saving' && <Loader2 size={16} className="animate-spin text-gray-400" />}
-                            {saveStatus === 'saved' && <CheckCircle2 size={16} className="text-green-500" />}
-                            {saveStatus === 'error' && <AlertCircle size={16} className="text-red-500" />}
-                        </div>
-                    </div>
-                </header>
-
-                <div className="flex-1 overflow-x-auto overflow-y-hidden p-6">
-                    <DndContext
-                        sensors={sensors}
-                        collisionDetection={closestCorners}
-                        onDragStart={onDragStart}
-                        onDragOver={() => { }} // Handle over in DragEnd for logic simplicity with trees
-                        onDragEnd={onDragEnd}
-                        dropAnimation={dropAnimation}
-                    >
-                        <div className="flex h-full gap-6 min-w-max pb-4">
-                            {COLUMNS.map(col => (
-                                <Column
-                                    key={col.id}
-                                    id={col.id}
-                                    title={col.label}
-                                    tasks={activeProject.columns[col.id]}
-                                    onAddTask={(content) => addTask(col.id, content)}
-                                    onUpdateTask={updateTask}
-                                    onDeleteTask={deleteTask}
-                                    onAddChild={addChildTask}
-                                    onMoveToColumn={moveToColumn}
-                                    onClone={cloneTask}
-                                    wipLimit={col.id === 'in-progress' ? activeProject.wipLimit : undefined}
-                                    onUpdateWipLimit={col.id === 'in-progress' ? updateWipLimit : undefined}
-                                    currentWipCount={col.id === 'in-progress' ? wipCount : undefined}
-                                />
-                            ))}
-                        </div>
-                        <DragOverlay>
-                            {activeTask ? (
-                                <div className="opacity-90 rotate-2 cursor-grabbing">
-                                    <SortableTask
-                                        task={activeTask}
-                                        onDelete={() => { }}
-                                        onUpdate={() => { }}
-                                        onAddChild={() => { }}
-                                        onMoveToColumn={() => { }}
-                                        onClone={() => { }}
-                                    />
-                                </div>
-                            ) : null}
-                        </DragOverlay>
-                    </DndContext>
-                </div>
-            </main>
-
-            {/* AI Chat */}
-            <AIChat
-                isOpen={isAiOpen}
-                onClose={() => setIsAiOpen(false)}
-                data={data}
-                onUpdateData={(newData) => setData(newData)}
-            />
-
-            {/* Modals */}
-            <Modal
-                isOpen={isYamlModalOpen}
-                onClose={() => setIsYamlModalOpen(false)}
-                title="Project Data (YAML)"
-            >
-                <div className="space-y-4">
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
-                        Full project source data.
-                    </p>
-                    <TextArea
-                        value={yamlContent}
-                        onChange={(e) => setYamlContent(e.target.value)}
-                        rows={15}
-                        className="font-mono text-xs leading-relaxed"
-                    />
-                    <div className="flex justify-between items-center pt-2">
-                        <Button variant="ghost" className="flex items-center gap-2" onClick={() => downloadYaml(data)}>
-                            <Download size={14} /> Download
-                        </Button>
-                        <div className="flex gap-3">
-                            <Button variant="ghost" onClick={() => setIsYamlModalOpen(false)}>Cancel</Button>
-                            <Button onClick={() => {
-                                const parsed = parseYaml(yamlContent);
-                                if (parsed) { setData(parsed); setIsYamlModalOpen(false); }
-                                else alert("Invalid YAML");
-                            }}>Apply Changes</Button>
-                        </div>
-                    </div>
-                </div>
-            </Modal>
-
-            <Modal
-                isOpen={isProjectModalOpen}
-                onClose={() => setIsProjectModalOpen(false)}
-                title="Create New Project"
-            >
-                <form onSubmit={addProject} className="space-y-4">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Project Name</label>
-                        <Input
-                            value={newProjectName}
-                            onChange={(e) => setNewProjectName(e.target.value)}
-                            placeholder="e.g., Q4 Roadmap"
-                            autoFocus
-                        />
-                    </div>
-                    <div className="flex justify-end gap-3 pt-2">
-                        <Button type="button" variant="ghost" onClick={() => setIsProjectModalOpen(false)}>Cancel</Button>
-                        <Button type="submit" disabled={!newProjectName.trim()}>Create</Button>
-                    </div>
-                </form>
-            </Modal>
-
-            <Modal
-                isOpen={!!projectToDelete}
-                onClose={() => setProjectToDelete(null)}
-                title="Delete Project?"
-            >
-                <div className="space-y-4">
-                    <p className="text-sm text-gray-600 dark:text-gray-300">
-                        Are you sure? This cannot be undone.
-                    </p>
-                    <div className="flex justify-end gap-3 pt-2">
-                        <Button variant="ghost" onClick={() => setProjectToDelete(null)}>Cancel</Button>
-                        <Button variant="danger" onClick={deleteProject}>Delete</Button>
-                    </div>
-                </div>
-            </Modal>
-
+                    ) : null}
+                </DragOverlay>
+            </DndContext>
         </div>
-    );
+      </main>
+
+      <AIChat 
+        isOpen={isAiOpen} 
+        onClose={() => setIsAiOpen(false)}
+        data={data}
+        onUpdateData={(newData) => setData(newData)}
+      />
+
+      <Modal 
+        isOpen={isYamlModalOpen} 
+        onClose={() => setIsYamlModalOpen(false)} 
+        title="Project Data (YAML)"
+      >
+        <div className="space-y-4">
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+                Full project source data.
+            </p>
+            <TextArea 
+                value={yamlContent} 
+                onChange={(e) => setYamlContent(e.target.value)} 
+                rows={15}
+                className="font-mono text-xs leading-relaxed"
+            />
+            <div className="flex justify-between items-center pt-2">
+                <Button variant="ghost" className="flex items-center gap-2" onClick={() => downloadYaml(data)}>
+                    <Download size={14} /> Download
+                </Button>
+                <div className="flex gap-3">
+                    <Button variant="ghost" onClick={() => setIsYamlModalOpen(false)}>Cancel</Button>
+                    <Button onClick={() => {
+                         const parsed = parseYaml(yamlContent);
+                         if (parsed) { setData(parsed); setIsYamlModalOpen(false); }
+                         else alert("Invalid YAML");
+                    }}>Apply Changes</Button>
+                </div>
+            </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={isProjectModalOpen}
+        onClose={() => setIsProjectModalOpen(false)}
+        title="Create New Project"
+      >
+          <form onSubmit={addProject} className="space-y-4">
+              <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Project Name</label>
+                  <Input 
+                    value={newProjectName} 
+                    onChange={(e) => setNewProjectName(e.target.value)} 
+                    placeholder="e.g., Q4 Roadmap"
+                    autoFocus
+                  />
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                  <Button type="button" variant="ghost" onClick={() => setIsProjectModalOpen(false)}>Cancel</Button>
+                  <Button type="submit" disabled={!newProjectName.trim()}>Create</Button>
+              </div>
+          </form>
+      </Modal>
+
+      <Modal
+        isOpen={!!projectToDelete}
+        onClose={() => setProjectToDelete(null)}
+        title="Delete Project?"
+      >
+         <div className="space-y-4">
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+               Are you sure? This cannot be undone.
+            </p>
+            <div className="flex justify-end gap-3 pt-2">
+                <Button variant="ghost" onClick={() => setProjectToDelete(null)}>Cancel</Button>
+                <Button variant="danger" onClick={deleteProject}>Delete</Button>
+            </div>
+         </div>
+      </Modal>
+
+    </div>
+  );
 }
