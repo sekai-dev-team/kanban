@@ -31,6 +31,7 @@ export interface Project {
   columns: {
     [key in ColumnId]: Task[];
   };
+    _version?: number;
 }
 
 // 整个应用的数据状态 (Global State)
@@ -38,6 +39,7 @@ export interface AppData {
   projects: Project[];            // 所有项目的列表
   activeProjectId: string | null; // 当前正在查看哪个项目
   theme: 'light' | 'dark';        // 主题设置
+    _version?: number;
 }
 
 // 列的静态配置数组，用于在页面上循环渲染出四列

@@ -1,66 +1,19 @@
 import yaml from 'js-yaml';
 import { AppData, Project } from '../types';
 
-const STORAGE_KEY = 'sekai_board_data_v2';
+// 定义一个固定的 ID，后端会生成 data/main-board-data.yaml
+// 这样整个 App 的所有项目都存在这一个文件里
+const API_BASE_URL = 'http://127.0.0.1:8000';
 
-const DEFAULT_PROJECT: Project = {
-    id: 'default-1',
-    name: 'Demo Project',
-    description: 'A sample project to demonstrate Sekai Board features.',
-    wipLimit: 3,
-    columns: {
-        backlog: [
-            {
-                id: 't1',
-                content: 'Explore Sekai Board features',
-                createdAt: Date.now(),
-                children: [
-                    { id: 't1-1', content: 'Test Drag and Drop', createdAt: Date.now(), children: [] },
-                    { id: 't1-2', content: 'Try Dark Mode', createdAt: Date.now(), children: [] }
-                ],
-                isExpanded: true
-            },
-            { id: 't2', content: 'Draft initial requirements', createdAt: Date.now(), children: [] }
-        ],
-        todo: [
-            { id: 't3', content: 'Design system setup', createdAt: Date.now(), children: [] }
-        ],
-        'in-progress': [],
-        done: []
-    }
-};
-
-const DEFAULT_DATA: AppData = {
-    projects: [DEFAULT_PROJECT],
+export const DEFAULT_DATA: AppData = {
+    projects: [],
     activeProjectId: 'default-1',
-    theme: 'light'
+    theme: 'light',
+    // @ts-ignore
+    _version: 1
 };
 
-export const saveToStorage = (data: AppData) => {
-    try {
-        const yamlString = yaml.dump(data);
-        localStorage.setItem(STORAGE_KEY, yamlString);
-    } catch (e) {
-        console.error('Failed to save data', e);
-    }
-};
-
-export const loadFromStorage = (): AppData => {
-    try {
-        const stored = localStorage.getItem(STORAGE_KEY);
-        if (!stored) return DEFAULT_DATA;
-
-        const parsed = yaml.load(stored) as AppData;
-        // Basic validation
-        if (!parsed.projects || !Array.isArray(parsed.projects)) {
-            return DEFAULT_DATA;
-        }
-        return parsed;
-    } catch (e) {
-        console.error('Failed to load data', e);
-        return DEFAULT_DATA;
-    }
-};
+// --- Local Storage Helpers (Optional/Backup) ---
 
 export const exportToYaml = (data: AppData): string => {
     return yaml.dump(data);
@@ -74,15 +27,84 @@ export const parseYaml = (yamlString: string): AppData | null => {
     }
 };
 
-export const saveToServer = async (data: AppData): Promise<boolean> => {
-    const delay = 500 + Math.random() * 1000;
-    await new Promise(resolve => setTimeout(resolve, delay));
-    console.log('[Mock Server] Data saved to /data/sekai_board.yaml', data);
-    return true;
+// --- API Services ---
+
+/**
+ * 从服务器加载整个应用数据
+ * @param storageId 用于存储的文件名ID (例如 'main-board-data')
+ */
+export const loadFromServer = async (storageId: string): Promise<AppData | null> => {
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/kanban/${storageId}`);
+
+        if (response.status === 404) {
+            console.log(`Storage ID '${storageId}' not found, initializing default.`);
+            return null; // 让 App.tsx 使用默认值
+        }
+
+        if (!response.ok) {
+            throw new Error(`Server responded with status: ${response.status}`);
+        }
+
+        const rawData = await response.json();
+
+        // 确保返回的数据符合 AppData 结构
+        // 注意：rawData 中会包含后端注入的 '_version' 字段，这很重要，需要保留在对象中
+        return rawData as AppData;
+
+    } catch (e) {
+        console.error('Failed to load data from server', e);
+        return null; // 出错时也返回 null，由 UI 决定显示错误或默认值
+    }
+};
+
+/**
+ * 保存整个应用数据到服务器
+ * @param storageId 用于存储的文件名ID
+ * @param data 整个 AppData 对象
+ */
+export const saveToServer = async (storageId: string, data: AppData): Promise<{ success: boolean, newVersion?: number }> => {
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/kanban/${storageId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            // 将整个 AppData 序列化发送
+            body: JSON.stringify(data),
+        });
+
+        if (response.status === 409) {
+            // 409 Conflict: 意味着服务器版本比本地高 (被其他人修改了)
+            console.warn('Version conflict detected.');
+            alert('Save conflict! Data has been modified externally. Please refresh.');
+            return { success: false };
+        }
+
+        if (!response.ok) {
+            throw new Error(`Server responded with status: ${response.status}`);
+        }
+
+        const responseData = await response.json();
+        console.log('[API Server] Data saved successfully. Version:', responseData.new_version);
+
+        // 更新本地数据的版本号，以便下一次保存（虽然 React State 可能会在下一次 fetch 前覆盖它，但这是一个好习惯）
+        if (responseData.new_version) {
+            (data as any)._version = responseData.new_version;
+        }
+
+        return { success: true, newVersion: responseData.new_version };
+
+    } catch (e) {
+        console.error('Failed to save data to server', e);
+        // 这里可以选择不 alert，而在 UI 上显示一个小红点
+        return { success: false };
+    }
 };
 
 export const downloadYaml = (data: AppData, filename = 'sekai_board.yaml') => {
     try {
+        // 在下载 YAML 时，通常不需要 _version 字段，可以选择剔除，也可以保留
         const yamlStr = exportToYaml(data);
         const blob = new Blob([yamlStr], { type: 'text/yaml;charset=utf-8;' });
         const link = document.createElement('a');

@@ -25,12 +25,14 @@ import { nanoid } from 'nanoid';
 
 // 本地组件引用
 import { Project, Task, COLUMNS, AppData, ColumnId, DragState } from './types';
-import { saveToStorage, loadFromStorage, exportToYaml, parseYaml, saveToServer, downloadYaml } from './services/yamlService';
+// [Change 1] 引入 loadFromServer，移除 loadFromStorage (或保留作为备用，但此处主要逻辑不再使用)
+import { exportToYaml, parseYaml, saveToServer, loadFromServer, downloadYaml } from './services/yamlService';
 import { Column } from './components/Column';
 import { SortableTask } from './components/SortableTask';
 import { Modal, Button, Input, TextArea } from './components/ui';
 import { AIChat } from './components/AIChat';
 
+const STORAGE_KEY = "kanban-data";
 // --- 辅助函数区 ---
 
 const findTask = (tasks: Task[], id: string): Task | undefined => {
@@ -86,8 +88,19 @@ const dropAnimation: DropAnimation = {
   }),
 };
 
+// Default empty state to prevent crashes before load
+const INITIAL_DATA: AppData = {
+    projects: [],
+    activeProjectId: '',
+    theme: 'light',
+    // 根据 types.ts 可能还有其他字段，保持最小结构
+};
+
 export default function App() {
-  const [data, setData] = useState<AppData>(loadFromStorage);
+  // [Change 2] State Initialization
+  // 不再直接从 storage 读取，而是给一个初始空状态，等待 useEffect 加载
+  const [data, setData] = useState<AppData>(INITIAL_DATA);
+  const [isLoading, setIsLoading] = useState(true); // 新增 Loading 状态
   
   // DnD 状态
   const [activeId, setActiveId] = useState<string | null>(null); 
@@ -107,7 +120,9 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
 
-  const searchInputRef = useRef<HTMLInputElement>(null);
+    // Refs
+    const searchInputRef = useRef<HTMLInputElement>(null);
+    const isFirstLoad = useRef(true); // 防止首次加载触发保存
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }), 
@@ -118,42 +133,103 @@ export default function App() {
     data.projects.find(p => p.id === data.activeProjectId) || data.projects[0]
   , [data.projects, data.activeProjectId]);
 
-  const filteredProjects = data.projects.filter(p => 
-    p.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+    const filteredProjects = (data.projects || []).filter(p =>
+        p.name.toLowerCase().includes(searchQuery.toLowerCase())
+    );
 
   const wipCount = useMemo(() => 
     activeProject ? countLeaves(activeProject.columns['in-progress']) : 0
   , [activeProject]);
 
-  useEffect(() => {
-    saveToStorage(data); 
-    if (data.theme === 'dark') document.documentElement.classList.add('dark');
-    else document.documentElement.classList.remove('dark');
+    // [Change 3] Load Data Effect
+    useEffect(() => {
+        const initData = async () => {
+            try {
+                // 假设 loadFromServer 内部处理了 fetch 逻辑，并返回 AppData 对象
+                // 这里可能需要传入 project_id，或者你的 loadFromServer 默认获取 'default'
+                // 基于 main.py，如果你只有一个全局看板，可能在 yamlService 里写死了 ID
+                const serverData = await loadFromServer(STORAGE_KEY) as unknown as AppData;
 
-    setSaveStatus('saving');
-    const timer = setTimeout(async () => {
-      try {
-        await saveToServer(data);
-        setSaveStatus('saved');
-      } catch (error) {
-        setSaveStatus('error');
-      }
-    }, 1000);
-    return () => clearTimeout(timer); 
-  }, [data]);
+                // 如果服务器有数据且有项目，就用服务器的。
+                // 否则，就使用空状态 (DEFAULT_DATA)，不自动创建 Demo Project。
+                if (serverData && serverData.projects && serverData.projects.length > 0) {
+                    setData(serverData);
+                    if (serverData.theme === 'dark') document.documentElement.classList.add('dark');
+                } else {
+                    // 显式设置为空状态
+                    setData({
+                        projects: [],
+                        activeProjectId: '',
+                        theme: 'light',
+                        _version: 1
+                    });
+                }
+            } catch (error) {
+                console.error("Failed to load data from server:", error);
+                setSaveStatus('error');
+            } finally {
+                setIsLoading(false);
+            }
+        };
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
-        e.preventDefault();
-        setIsSearchOpen(true);
-        setTimeout(() => searchInputRef.current?.focus(), 50);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+        initData();
+    }, []);
+
+    // [Change 4] Save Data Effect
+    useEffect(() => {
+        // 如果正在加载中，或者是刚加载完的那一次渲染，不要执行保存
+        if (isLoading) return;
+
+        if (isFirstLoad.current) {
+            isFirstLoad.current = false;
+            return;
+        }
+
+        // [Removed] saveToStorage(data); // 移除 LocalStorage 同步
+
+        if (data.theme === 'dark') document.documentElement.classList.add('dark');
+        else document.documentElement.classList.remove('dark');
+
+        setSaveStatus('saving');
+        const timer = setTimeout(async () => {
+            try {
+                // 调用后端 API 保存
+                await saveToServer(STORAGE_KEY, data);
+                setSaveStatus('saved');
+            } catch (error) {
+                console.error("Save error:", error);
+                setSaveStatus('error');
+                // TODO: Handle 409 Conflict here in next step
+            }
+        }, 1000); // Debounce 1s
+
+        return () => clearTimeout(timer);
+    }, [data, isLoading]);
+
+    // Keyboard Shortcuts
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+                e.preventDefault();
+                setIsSearchOpen(true);
+                setTimeout(() => searchInputRef.current?.focus(), 50);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, []);
+
+    // --- Loading Screen ---
+    if (isLoading) {
+        return (
+            <div className="flex h-screen items-center justify-center bg-gray-50 dark:bg-zinc-950 text-slate-900 dark:text-gray-100">
+                <div className="flex flex-col items-center gap-4">
+                    <Loader2 size={48} className="animate-spin text-indigo-500" />
+                    <p className="text-sm font-medium text-gray-500">Syncing with server...</p>
+                </div>
+            </div>
+        );
+    }
 
   // --- 项目操作 Handlers ---
   const addProject = (e: React.FormEvent) => {
@@ -600,37 +676,36 @@ export default function App() {
             </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-4 py-2 space-y-1">
-            <div className="text-xs font-semibold text-gray-400 dark:text-zinc-500 uppercase tracking-wider mb-2 px-2">Projects</div>
-            {filteredProjects.map(project => (
-                <div 
-                    key={project.id}
-                    onClick={() => {
-                        setData(p => ({...p, activeProjectId: project.id}));
-                        setSearchQuery('');
-                    }}
-                    className={`group flex items-center justify-between px-3 py-2.5 rounded-lg text-sm cursor-pointer transition-all ${
-                        project.id === activeProject.id 
-                        ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white font-medium' 
-                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-zinc-800/50 hover:text-gray-900 dark:hover:text-gray-200'
-                    }`}
-                >
-                    <div className="flex items-center gap-2 truncate">
-                        <Folder size={16} className={project.id === activeProject.id ? 'fill-current opacity-20' : ''} />
-                        <span className="truncate">{project.name}</span>
-                    </div>
-                    {data.projects.length > 1 && (
-                        <button 
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); setProjectToDelete(project.id); }}
-                            className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-red-100 dark:hover:bg-red-900/30 text-red-500 rounded transition-all focus:opacity-100 focus:outline-none"
+                <div className="flex-1 overflow-y-auto px-4 py-2 space-y-1">
+                    <div className="text-xs font-semibold text-gray-400 dark:text-zinc-500 uppercase tracking-wider mb-2 px-2">Projects</div>
+                    {filteredProjects.map(project => (
+                        <div
+                            key={project.id}
+                            onClick={() => {
+                                setData(p => ({ ...p, activeProjectId: project.id }));
+                                setSearchQuery('');
+                            }}
+                            className={`group flex items-center justify-between px-3 py-2.5 rounded-lg text-sm cursor-pointer transition-all ${project.id === activeProject?.id
+                                ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white font-medium'
+                                : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-zinc-800/50 hover:text-gray-900 dark:hover:text-gray-200'
+                                }`}
                         >
-                            <Trash size={12} className="pointer-events-none" />
-                        </button>
-                    )}
+                            <div className="flex items-center gap-2 truncate">
+                                <Folder size={16} className={project.id === activeProject?.id ? 'fill-current opacity-20' : ''} />
+                                <span className="truncate">{project.name}</span>
+                            </div>
+                            {data.projects.length > 1 && (
+                                <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); setProjectToDelete(project.id); }}
+                                    className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-red-100 dark:hover:bg-red-900/30 text-red-500 rounded transition-all focus:opacity-100 focus:outline-none"
+                                >
+                                    <Trash size={12} className="pointer-events-none" />
+                                </button>
+                            )}
+                        </div>
+                    ))}
                 </div>
-            ))}
-        </div>
 
         <div className="p-4 border-t border-gray-200 dark:border-zinc-800 space-y-2">
             <Button variant="ghost" className="w-full flex items-center justify-start gap-2 px-3 py-2.5" onClick={() => setIsProjectModalOpen(true)}>
@@ -651,43 +726,46 @@ export default function App() {
         </div>
       </aside>
 
-      {/* Main Board */}
-      <main className="flex-1 flex flex-col overflow-hidden relative">
-        <header className="h-auto min-h-[4rem] border-b border-gray-200 dark:border-zinc-800 flex flex-col justify-center px-8 bg-white/50 dark:bg-zinc-950/50 backdrop-blur-md z-10 py-3">
-            <div className="flex items-start justify-between">
-                <div className="flex-1 mr-8">
-                    <div className="flex items-center gap-4 mb-1">
-                        <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-                            {activeProject.name}
-                        </h2>
-                        <span className="px-2.5 py-0.5 rounded-full bg-gray-100 dark:bg-zinc-800 text-xs text-gray-500 dark:text-zinc-400 font-mono">
-                            {Object.values(activeProject.columns).flat().length} Top-level Tasks
-                        </span>
-                    </div>
-                    <input 
-                        className="w-full bg-transparent text-sm text-gray-500 dark:text-gray-400 focus:text-gray-800 dark:focus:text-gray-200 focus:outline-none border-b border-transparent focus:border-gray-200 dark:focus:border-zinc-700 transition-colors pb-0.5"
-                        value={activeProject.description || ''}
-                        onChange={(e) => updateProjectDescription(e.target.value)}
-                        placeholder="Add a project description..."
-                    />
-                </div>
-                
-                <div className="flex items-center gap-4">
-                     <Button 
-                        variant="ghost" 
-                        className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/10 hover:bg-indigo-100 dark:hover:bg-indigo-900/20"
-                        onClick={() => setIsAiOpen(!isAiOpen)}
-                     >
-                        <Sparkles size={16} />
-                        AI Assist
-                     </Button>
+            {/* Main Board Area */}
+            {activeProject ? (
+                <main className="flex-1 flex flex-col overflow-hidden relative">
+                    <header className="h-auto min-h-[4rem] border-b border-gray-200 dark:border-zinc-800 flex flex-col justify-center px-8 bg-white/50 dark:bg-zinc-950/50 backdrop-blur-md z-10 py-3">
+                        <div className="flex items-start justify-between">
+                            <div className="flex-1 mr-8">
+                                <div className="flex items-center gap-4 mb-1">
+                                    <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                                        {activeProject.name}
+                                    </h2>
+                                    <span className="px-2.5 py-0.5 rounded-full bg-gray-100 dark:bg-zinc-800 text-xs text-gray-500 dark:text-zinc-400 font-mono">
+                                        {Object.values(activeProject.columns).flat().length} Top-level Tasks
+                                    </span>
+                                </div>
+                                {/* Project Description */}
+                                <input
+                                    className="w-full bg-transparent text-sm text-gray-500 dark:text-gray-400 focus:text-gray-800 dark:focus:text-gray-200 focus:outline-none border-b border-transparent focus:border-gray-200 dark:focus:border-zinc-700 transition-colors pb-0.5"
+                                    value={activeProject.description || ''}
+                                    onChange={(e) => updateProjectDescription(e.target.value)}
+                                    placeholder="Add a project description..."
+                                />
+                            </div>
 
-                     {saveStatus === 'saving' && <Loader2 size={16} className="animate-spin text-gray-400" />}
-                     {saveStatus === 'saved' && <CheckCircle2 size={16} className="text-green-500" />}
-                     {saveStatus === 'error' && <AlertCircle size={16} className="text-red-500" />}
-                </div>
-            </div>
-        </header>
+                            {/* Status Indicator & AI */}
+                            <div className="flex items-center gap-4">
+                                <Button
+                                    variant="ghost"
+                                    className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/10 hover:bg-indigo-100 dark:hover:bg-indigo-900/20"
+                                    onClick={() => setIsAiOpen(!isAiOpen)}
+                                >
+                                    <Sparkles size={16} />
+                                    AI Assist
+                                </Button>
+
+                                {saveStatus === 'saving' && <Loader2 size={16} className="animate-spin text-gray-400" />}
+                                {saveStatus === 'saved' && <CheckCircle2 size={16} className="text-green-500" />}
+                                {saveStatus === 'error' && <AlertCircle size={16} className="text-red-500" title="Sync Error" />}
+                            </div>
+                        </div>
+                    </header>
 
         <div className="flex-1 overflow-x-auto overflow-y-hidden p-6">
             <DndContext
@@ -736,6 +814,11 @@ export default function App() {
             </DndContext>
         </div>
       </main>
+      ) : (
+                <div className="flex-1 flex items-center justify-center text-gray-400">
+                    No Project Selected
+                </div>
+            )}
 
       <AIChat 
         isOpen={isAiOpen} 
