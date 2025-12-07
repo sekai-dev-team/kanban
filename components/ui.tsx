@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, createContext, useContext } from 'react';
+import { createPortal } from 'react-dom'; // 引入 createPortal
 import { X } from 'lucide-react';
 
 interface ModalProps {
@@ -65,6 +66,8 @@ export const TextArea: React.FC<React.TextareaHTMLAttributes<HTMLTextAreaElement
     );
 };
 
+// 创建一个 Context 用来传递关闭函数
+const MenuContext = createContext<{ close: () => void } | null>(null);
 interface MenuProps {
     trigger: React.ReactNode;
     children: React.ReactNode;
@@ -72,40 +75,90 @@ interface MenuProps {
 
 export const Menu: React.FC<MenuProps> = ({ trigger, children }) => {
     const [isOpen, setIsOpen] = useState(false);
+    const [position, setPosition] = useState({ top: 0, left: 0 });
+    const triggerRef = useRef<HTMLDivElement>(null);
     const menuRef = useRef<HTMLDivElement>(null);
+
+    // 关闭菜单的函数，将通过 Context 传给子元素
+    const close = () => setIsOpen(false);
+
+    const handleToggle = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (!isOpen && triggerRef.current) {
+            const rect = triggerRef.current.getBoundingClientRect();
+            setPosition({
+                top: rect.bottom + 8 + window.scrollY,
+                left: rect.right - 224 + window.scrollX
+            });
+        }
+        setIsOpen(!isOpen);
+    };
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
-            if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+            if (
+                isOpen &&
+                triggerRef.current &&
+                !triggerRef.current.contains(event.target as Node) &&
+                menuRef.current &&
+                !menuRef.current.contains(event.target as Node)
+            ) {
                 setIsOpen(false);
             }
         };
+        const handleScroll = () => { if (isOpen) setIsOpen(false); };
+
         document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, []);
+        window.addEventListener('scroll', handleScroll, true);
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+            window.removeEventListener('scroll', handleScroll, true);
+        };
+    }, [isOpen]);
 
     return (
-        <div className="relative inline-block text-left" ref={menuRef}>
-            <div onClick={() => setIsOpen(!isOpen)}>{trigger}</div>
-            {isOpen && (
-                <div className="absolute right-0 z-50 mt-2 w-56 origin-top-right rounded-md bg-white dark:bg-zinc-900 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none border border-gray-100 dark:border-zinc-800 animate-in fade-in zoom-in-95 duration-100">
+        <MenuContext.Provider value={{ close }}>
+            <div ref={triggerRef} onClick={handleToggle} className="inline-block cursor-pointer">
+                {trigger}
+            </div>
+
+            {isOpen && createPortal(
+                <div
+                    ref={menuRef}
+                    style={{
+                        position: 'absolute',
+                        top: position.top,
+                        left: position.left,
+                        zIndex: 9999
+                    }}
+                    className="w-56 rounded-md bg-white dark:bg-zinc-900 shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none border border-gray-100 dark:border-zinc-800 animate-in fade-in zoom-in-95 duration-100"
+                >
                     <div className="py-1">
                         {children}
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
-        </div>
+        </MenuContext.Provider>
     );
 };
 
-export const MenuItem: React.FC<{ onClick?: () => void; children: React.ReactNode; className?: string }> = ({ onClick, children, className = '' }) => (
-    <button
-        onClick={(e) => {
-            e.stopPropagation();
-            onClick?.();
-        }}
-        className={`w-full text-left block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-zinc-800 ${className}`}
-    >
-        {children}
-    </button>
-);
+export const MenuItem: React.FC<{ onClick?: () => void; children: React.ReactNode; className?: string }> = ({ onClick, children, className = '' }) => {
+    // 获取 Context
+    const menu = useContext(MenuContext);
+
+    return (
+        <button
+            onClick={(e) => {
+                e.stopPropagation();
+                // 先执行传入的功能逻辑
+                onClick?.();
+                // 然后关闭菜单
+                menu?.close();
+            }}
+            className={`w-full text-left block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-zinc-800 ${className}`}
+        >
+            {children}
+        </button>
+    );
+};
