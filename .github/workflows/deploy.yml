@@ -23,7 +23,7 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           # 修改为您的镜像名称，例如: myname/kanban-frontend
-          images: ${{ secrets.DOCKERHUB_USERNAME }}/kanban-frontend:latest
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/kanban-frontend
           tags: |
             type=raw,value=latest
             type=sha,format=long
