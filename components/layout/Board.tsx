@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
-import { 
-    DndContext, 
-    DragOverlay, 
+import {
+    DndContext,
+    DragOverlay,
     pointerWithin // Changed: Use pointerWithin for strict cursor based detection
 } from '@dnd-kit/core';
 import { Project, Task, COLUMNS, ColumnId } from '../../types';
@@ -42,7 +42,7 @@ export const Board: React.FC<BoardProps> = ({
     // 因此，我们需要在 App (或这里) 适配一下。
     // 最简单的方法是让 useAppData 暴露一个 updateProjectColumns 方法，或者我们在 App.tsx 里构造它。
     // 既然 useDnd 已经在 hook 里了，我们就直接使用它。
-    
+
     const {
         activeTask,
         dragState,
@@ -52,12 +52,12 @@ export const Board: React.FC<BoardProps> = ({
         onDragEnd
     } = useDnd({ activeProject, updateProjectColumns });
 
-    const wipCount = useMemo(() => 
+    const wipCount = useMemo(() =>
         countLeaves(activeProject.columns['in-progress'])
-    , [activeProject, countLeaves]);
+        , [activeProject, countLeaves]);
 
     return (
-        <div className="flex-1 overflow-x-auto overflow-y-auto p-6">
+        <div className="flex-1 overflow-x-auto overflow-y-auto p-4">
             <DndContext
                 sensors={sensors}
                 collisionDetection={pointerWithin}
@@ -65,7 +65,7 @@ export const Board: React.FC<BoardProps> = ({
                 onDragOver={onDragOver}
                 onDragEnd={onDragEnd}
             >
-                <div className="flex h-fit min-h-full gap-6 min-w-max pb-4">
+                <div className="flex h-full w-full gap-4">
                     {COLUMNS.map(col => (
                         <Column
                             key={col.id}
@@ -81,23 +81,23 @@ export const Board: React.FC<BoardProps> = ({
                             wipLimit={col.id === 'in-progress' ? activeProject.wipLimit : undefined}
                             onUpdateWipLimit={(limit) => updateWipLimit(activeProject.id, limit)}
                             currentWipCount={col.id === 'in-progress' ? wipCount : undefined}
-                            dragState={dragState} 
+                            dragState={dragState}
                         />
                     ))}
                 </div>
                 <DragOverlay dropAnimation={dropAnimation}>
                     {activeTask ? (
                         <div className="opacity-90 rotate-2 cursor-grabbing">
-                                <SortableTask 
-                                task={activeTask} 
-                                onDelete={()=>{}} 
-                                onUpdate={()=>{}} 
-                                onAddChild={()=>{}} 
-                                onMoveToColumn={()=>{}}
-                                onClone={()=>{}}
+                            <SortableTask
+                                task={activeTask}
+                                onDelete={() => { }}
+                                onUpdate={() => { }}
+                                onAddChild={() => { }}
+                                onMoveToColumn={() => { }}
+                                onClone={() => { }}
                                 dragState={null}
-                                isOverlay={true} 
-                                />
+                                isOverlay={true}
+                            />
                         </div>
                     ) : null}
                 </DragOverlay>
