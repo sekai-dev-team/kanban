@@ -1,6 +1,17 @@
 import React, { useState, useRef, useEffect, createContext, useContext } from 'react';
 import { createPortal } from 'react-dom'; // 引入 createPortal
 import { X } from 'lucide-react';
+// 引入必要的 Hooks
+import { 
+    useFloating, 
+    autoUpdate, 
+    offset, 
+    flip, 
+    shift,
+    useDismiss,     // 新增：处理点击外部关闭
+    useClick,       // 新增：处理点击触发
+    useInteractions // 新增：合并交互逻辑
+} from '@floating-ui/react';
 
 interface ModalProps {
     isOpen: boolean;
@@ -75,66 +86,60 @@ interface MenuProps {
 
 export const Menu: React.FC<MenuProps> = ({ trigger, children }) => {
     const [isOpen, setIsOpen] = useState(false);
-    const [position, setPosition] = useState({ top: 0, left: 0 });
-    const triggerRef = useRef<HTMLDivElement>(null);
-    const menuRef = useRef<HTMLDivElement>(null);
+    
+    // 1. 浮动定位配置
+    const { refs, floatingStyles, context } = useFloating({
+        open: isOpen,
+        onOpenChange: setIsOpen,
+        placement: 'bottom-end',
+        whileElementsMounted: autoUpdate,
+        middleware: [
+            offset(4),
+            flip(),
+            shift({ padding: 8 }),
+        ],
+    });
 
-    // 关闭菜单的函数，将通过 Context 传给子元素
+    // 2. 交互配置 (点击和自动关闭)
+    const click = useClick(context);
+    const dismiss = useDismiss(context);
+    const { getReferenceProps, getFloatingProps } = useInteractions([
+        click,
+        dismiss,
+    ]);
+
     const close = () => setIsOpen(false);
 
-    const handleToggle = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        if (!isOpen && triggerRef.current) {
-            const rect = triggerRef.current.getBoundingClientRect();
-            setPosition({
-                top: rect.bottom + 8 + window.scrollY,
-                left: rect.right - 224 + window.scrollX
-            });
-        }
-        setIsOpen(!isOpen);
-    };
-
-    useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => {
-            if (
-                isOpen &&
-                triggerRef.current &&
-                !triggerRef.current.contains(event.target as Node) &&
-                menuRef.current &&
-                !menuRef.current.contains(event.target as Node)
-            ) {
-                setIsOpen(false);
-            }
-        };
-        const handleScroll = () => { if (isOpen) setIsOpen(false); };
-
-        document.addEventListener('mousedown', handleClickOutside);
-        window.addEventListener('scroll', handleScroll, true);
-        return () => {
-            document.removeEventListener('mousedown', handleClickOutside);
-            window.removeEventListener('scroll', handleScroll, true);
-        };
-    }, [isOpen]);
+    // 处理 Trigger
+    const triggerElement = React.isValidElement(trigger) ? React.cloneElement(trigger, {
+        ref: refs.setReference,
+        ...getReferenceProps()
+    } as React.HTMLAttributes<HTMLElement>) : (
+        <div ref={refs.setReference} className="inline-block cursor-pointer" {...getReferenceProps()}>
+            {trigger}
+        </div>
+    );
 
     return (
         <MenuContext.Provider value={{ close }}>
-            <div ref={triggerRef} onClick={handleToggle} className="inline-block cursor-pointer">
-                {trigger}
-            </div>
-
+            {triggerElement}
             {isOpen && createPortal(
+                /* ★ 修复关键：外层 div 只负责定位 
+                   注意：移除了 className 里的样式和动画，只保留 ref 和 style
+                */
                 <div
-                    ref={menuRef}
-                    style={{
-                        position: 'absolute',
-                        top: position.top,
-                        left: position.left,
-                        zIndex: 9999
-                    }}
-                    className="w-56 rounded-md bg-white dark:bg-zinc-900 shadow-xl ring-1 ring-black ring-opacity-5 focus:outline-none border border-gray-100 dark:border-zinc-800 animate-in fade-in zoom-in-95 duration-100"
+                    ref={refs.setFloating}
+                    style={{ ...floatingStyles, zIndex: 9999 }}
+                    {...getFloatingProps()}
+                    className="focus:outline-none" // 保持无轮廓，避免聚焦时的蓝框
                 >
-                    <div className="py-1">
-                        {children}
+                    {/* ★ 修复关键：内层 div 负责样式、背景和动画
+                       这样 transform 就不会打架了：外层负责位移，内层负责缩放
+                    */}
+                    <div className="w-56 rounded-md bg-white dark:bg-zinc-900 shadow-xl ring-1 ring-black ring-opacity-5 border border-gray-100 dark:border-zinc-800 animate-in fade-in zoom-in-95 duration-100">
+                        <div className="py-1">
+                            {children}
+                        </div>
                     </div>
                 </div>,
                 document.body
