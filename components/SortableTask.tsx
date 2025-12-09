@@ -34,13 +34,12 @@ const getRelativeTime = (timestamp: number) => {
     return `${days}d`;
 };
 
-// 优化：返回背景色而非边框色，增加柔和度
 const getPriorityColor = (priority?: Priority) => {
     switch (priority) {
         case 'high': return 'bg-red-500';
         case 'medium': return 'bg-orange-400';
         case 'low': return 'bg-blue-400';
-        default: return 'bg-transparent'; // 无优先级时透明，但保留占位（可选）
+        default: return 'bg-transparent';
     }
 };
 
@@ -113,17 +112,20 @@ export const SortableTask: React.FC<Props> = ({
 
     const showTopLine = isTarget && dragState?.type === 'insert' && dragState?.position === 'top';
     const showBottomLine = isTarget && dragState?.type === 'insert' && dragState?.position === 'bottom';
-    // Nest 样式稍微调优，更柔和
     const nestClass = (isTarget && dragState?.type === 'nest')
         ? 'ring-2 ring-blue-500 ring-offset-1 bg-blue-50/50 dark:bg-blue-900/20'
         : '';
 
     if (isDragging) {
-        return <div ref={setNodeRef} style={style} className="opacity-40 bg-gray-200 dark:bg-zinc-800 rounded-lg h-12 border-2 border-dashed border-zinc-400 mb-2" />;
+        return <div
+            ref={setNodeRef}
+            style={style}
+            className="opacity-40 bg-gray-200 dark:bg-zinc-800 rounded-lg h-12 border-2 border-dashed border-zinc-400 dark:border-zinc-600"
+        />
     }
 
     return (
-        <div ref={setNodeRef} style={style} className="mb-2 touch-manipulation relative select-none">
+        <div ref={setNodeRef} style={style} className="touch-manipulation relative select-none">
             {!isDragging && !isOverlay && (
                 <>
                     <div ref={setTopRef} className="absolute top-0 left-0 right-0 h-[20%] z-10 pointer-events-none" />
@@ -134,53 +136,54 @@ export const SortableTask: React.FC<Props> = ({
 
             {showTopLine && <div className="absolute -top-1.5 left-0 right-0 h-1 bg-blue-500 rounded-full z-20" />}
 
-            {/* 卡片容器：
-                1. 移除了 border-l-[3px] 和 getPriorityBorderColor
-                2. 改为了 flex 布局，方便放置左侧指示条
-            */}
             <div className={`group relative bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-lg shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden flex ${nestClass}`}>
 
-                {/* ★ 核心改动：内部悬浮指示条 (Internal Floating Pill) */}
-                {/* - w-1: 宽度 4px (比之前的 3px border 稍微饱满一点)
-                    - rounded-full: 两端圆角，看起来非常平滑
-                    - my-3: 上下留白，不顶到头，解决“割裂感”
-                    - ml-3: 左侧留白
-                    - shrink-0: 防止被挤压
-                */}
-                <div className={`shrink-0 w-1 rounded-full my-3 ml-3 transition-colors duration-300 ${getPriorityColor(task.priority)}`} />
+                {/* 底部绝对定位进度条 */}
+                {showProgress && (
+                    <div className="absolute bottom-0 left-0 h-[2px] bg-gray-100 dark:bg-zinc-800 w-full z-20">
+                        <div
+                            className={`h-full transition-all duration-500 ${progressPercent === 100 ? 'bg-green-500' : 'bg-blue-500'}`}
+                            style={{ width: `${progressPercent}%` }}
+                        />
+                    </div>
+                )}
 
-                {/* 右侧内容区域 (Flex-1) */}
+                {/* 优化点 1：Pill 间距收紧
+                    ml-2 (8px) + w-1 (4px) = 12px 占用，比之前的 ~20px 紧凑得多。
+                    my-2.5: 上下稍微留白，保持垂直居中感。
+                */}
+                <div className={`shrink-0 w-1 rounded-full my-2.5 ml-2 transition-colors duration-300 ${getPriorityColor(task.priority)}`} />
+
                 <div className="flex-1 min-w-0 relative flex flex-col">
 
-                    {/* 极细进度条 (绝对定位在底部) */}
-                    {showProgress && (
-                        <div className="absolute bottom-0 left-0 h-[2px] bg-gray-100 dark:bg-zinc-800 w-full z-20">
-                            <div
-                                className={`h-full transition-all duration-500 ${progressPercent === 100 ? 'bg-green-500' : 'bg-blue-500'}`}
-                                style={{ width: `${progressPercent}%` }}
-                            />
-                        </div>
-                    )}
+                    {/* 优化点 2：Content Padding 收紧
+                       py-2 pr-2 pl-2: 上下右左都设为 8px (之前是 12px)，让内容更饱满
+                    */}
+                    <div className="py-2 pr-2 pl-2">
+                        <div className="flex items-start gap-1.5"> {/* gap-1.5 (6px) 比 gap-2 更紧凑 */}
 
-                    <div className="p-3 pl-2"> {/* pl-2 调整文字与指示条的间距 */}
-                        <div className="flex items-start gap-2">
+                            {/* 优化点 3：对齐修正
+                               text-sm 行高通常是 20px。图标 14px。
+                               (20 - 14) / 2 = 3px。
+                               所以 mt-[3px] 能保证图标绝对垂直居中于第一行文字。
+                            */}
                             <button
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     onUpdate(task.id, { isExpanded: !task.isExpanded });
                                 }}
-                                className={`mt-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors ${totalSubtasks === 0 ? 'opacity-30 hover:opacity-100' : ''}`}
+                                className={`mt-[3px] text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors relative z-20 ${totalSubtasks === 0 ? 'opacity-30 hover:opacity-100' : ''}`}
                             >
                                 {task.isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                             </button>
 
                             {depth > 0 && (
-                                <div className="mt-0.5" onPointerDown={e => e.stopPropagation()}>
+                                <div className="mt-[3px] relative z-20" onPointerDown={e => e.stopPropagation()}>
                                     <input
                                         type="checkbox"
                                         checked={!!task.completed}
                                         onChange={() => onUpdate(task.id, { completed: !task.completed })}
-                                        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
+                                        className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600 block"
                                     />
                                 </div>
                             )}
@@ -196,7 +199,7 @@ export const SortableTask: React.FC<Props> = ({
                                             if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleEditSubmit(); }
                                             if (e.key === 'Escape') { setEditContent(task.content); setIsEditing(false); }
                                         }}
-                                        className="w-full bg-gray-50 dark:bg-zinc-800 rounded p-1.5 text-sm focus:outline-none resize-none block"
+                                        className="w-full bg-gray-50 dark:bg-zinc-800 rounded p-1 text-sm focus:outline-none resize-none block leading-5"
                                         onClick={(e) => e.stopPropagation()}
                                         onPointerDown={(e) => e.stopPropagation()}
                                         rows={2}
@@ -204,7 +207,7 @@ export const SortableTask: React.FC<Props> = ({
                                 ) : (
                                     <div
                                         onDoubleClick={() => setIsEditing(true)}
-                                        className={`text-sm leading-relaxed text-gray-700 dark:text-gray-200 break-words ${task.completed ? 'line-through text-gray-400' : ''}`}
+                                        className={`text-sm leading-5 text-gray-700 dark:text-gray-200 break-words ${task.completed ? 'line-through text-gray-400' : ''}`}
                                     >
                                         {task.content}
                                     </div>
@@ -214,10 +217,11 @@ export const SortableTask: React.FC<Props> = ({
 
                         {/* 进度胶囊 */}
                         {showProgress && (
-                            <div className="mt-1.5 pl-6">
+                            // 这里 padding-left 稍微调整以对齐文字
+                            <div className="mt-1.5 pl-5">
                                 <div className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full border ${progressPercent === 100
-                                        ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:border-green-900/50 dark:text-green-400'
-                                        : 'bg-gray-50 text-gray-500 border-gray-100 dark:bg-zinc-800/50 dark:border-zinc-700 dark:text-zinc-400'
+                                    ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:border-green-900/50 dark:text-green-400'
+                                    : 'bg-gray-50 text-gray-500 border-gray-100 dark:bg-zinc-800/50 dark:border-zinc-700 dark:text-zinc-400'
                                     }`}>
                                     <CheckSquare size={10} />
                                     <span>{completedSubtasks}/{totalSubtasks}</span>
@@ -228,7 +232,7 @@ export const SortableTask: React.FC<Props> = ({
                         {/* 悬停展开的操作栏 */}
                         <div className="grid grid-rows-[0fr] group-hover:grid-rows-[1fr] transition-[grid-template-rows] duration-200 ease-out">
                             <div className="overflow-hidden">
-                                <div className="pt-2 pl-6 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity duration-300 delay-75">
+                                <div className="pt-2 pl-5 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity duration-300 delay-75">
                                     <div className="flex items-center gap-2 text-[10px] text-gray-300 dark:text-zinc-600 font-mono select-none">
                                         <span>#{task.id.slice(-4)}</span>
                                         {task.createdAt && <span>• {getRelativeTime(task.createdAt)}</span>}
@@ -276,7 +280,9 @@ export const SortableTask: React.FC<Props> = ({
             {showBottomLine && <div className="absolute -bottom-1.5 left-0 right-0 h-1 bg-blue-500 rounded-full z-20" />}
 
             {(task.isExpanded || isAddingChild) && (
-                <div className="ml-6 border-l border-gray-200 dark:border-zinc-800 pl-2 mt-1 space-y-1">
+                // 优化点 4：子任务缩进收紧
+                // ml-6 -> ml-4 (16px)，显著减少层级过深时的“楼梯”效应
+                <div className="ml-4 border-l border-gray-200 dark:border-zinc-800 pl-2 mt-1 space-y-1">
                     <SortableContext items={task.children.map(c => c.id)} strategy={verticalListSortingStrategy}>
                         {task.children.map((child) => (
                             <SortableTask

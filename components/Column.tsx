@@ -128,7 +128,7 @@ export const Column: React.FC<Props> = ({
             >
                 <SortableContext items={tasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
                     {/* 这里加 overflow-y-auto 让任务列表可以独立滚动 */}
-                    <div className="flex flex-col min-h-[50px] overflow-y-auto flex-1 pr-1 custom-scrollbar">
+                    <div className="flex flex-col min-h-[50px] overflow-y-auto flex-1 pr-1 custom-scrollbar gap-3">
                         {tasks.map((task) => (
                             <SortableTask
                                 key={task.id}
