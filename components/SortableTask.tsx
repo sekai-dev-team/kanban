@@ -3,13 +3,12 @@ import { useSortable, SortableContext, verticalListSortingStrategy } from '@dnd-
 import { useDroppable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import {
-    MoreVertical, ChevronRight, ChevronDown, Plus, Copy, Trash, Edit2,
-    Clock, CheckSquare, Hash, Flag // 新增 Hash (ID) 和 Flag (优先级) 图标
+    MoreHorizontal, ChevronRight, ChevronDown, Plus, Copy, Trash, Edit2,
+    CheckSquare, Flag
 } from 'lucide-react';
 import { Task, ColumnId, DragState, Priority } from '../types';
 import { Menu, MenuItem } from './ui';
 
-// Props 定义
 interface Props {
     task: Task;
     depth?: number;
@@ -29,19 +28,19 @@ const getRelativeTime = (timestamp: number) => {
     const hours = Math.floor(diff / 3600000);
     const days = Math.floor(diff / 86400000);
 
-    if (minutes < 1) return 'Just now';
-    if (minutes < 60) return `${minutes}m ago`;
-    if (hours < 24) return `${hours}h ago`;
-    return `${days}d ago`;
+    if (minutes < 1) return 'now';
+    if (minutes < 60) return `${minutes}m`;
+    if (hours < 24) return `${hours}h`;
+    return `${days}d`;
 };
 
-// 优先级颜色映射辅助函数
+// 优化：返回背景色而非边框色，增加柔和度
 const getPriorityColor = (priority?: Priority) => {
     switch (priority) {
         case 'high': return 'bg-red-500';
         case 'medium': return 'bg-orange-400';
         case 'low': return 'bg-blue-400';
-        default: return 'bg-transparent';
+        default: return 'bg-transparent'; // 无优先级时透明，但保留占位（可选）
     }
 };
 
@@ -60,7 +59,6 @@ export const SortableTask: React.FC<Props> = ({
         attributes,
         listeners,
         setNodeRef,
-        transform,
         transition,
         isDragging,
     } = useSortable({
@@ -81,23 +79,16 @@ export const SortableTask: React.FC<Props> = ({
     const addChildInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
-        if (isEditing && editInputRef.current) {
-            editInputRef.current.focus();
-        }
+        if (isEditing && editInputRef.current) editInputRef.current.focus();
     }, [isEditing]);
 
     useEffect(() => {
-        if (isAddingChild && addChildInputRef.current) {
-            addChildInputRef.current.focus();
-        }
+        if (isAddingChild && addChildInputRef.current) addChildInputRef.current.focus();
     }, [isAddingChild]);
 
     const handleEditSubmit = () => {
-        if (editContent.trim()) {
-            onUpdate(task.id, { content: editContent });
-        } else {
-            setEditContent(task.content);
-        }
+        if (editContent.trim()) onUpdate(task.id, { content: editContent });
+        else setEditContent(task.content);
         setIsEditing(false);
     };
 
@@ -106,10 +97,7 @@ export const SortableTask: React.FC<Props> = ({
         if (newChildContent.trim()) {
             onAddChild(task.id, newChildContent);
             setNewChildContent('');
-            setTimeout(() => addChildInputRef.current?.focus(), 10);
-            if (!task.isExpanded) {
-                onUpdate(task.id, { isExpanded: true });
-            }
+            if (!task.isExpanded) onUpdate(task.id, { isExpanded: true });
         } else {
             setIsAddingChild(false);
         }
@@ -122,16 +110,16 @@ export const SortableTask: React.FC<Props> = ({
 
     const style = { transition };
     const isTarget = dragState?.targetId === task.id;
-    const nestClass = (isTarget && dragState?.type === 'nest')
-        ? 'ring-2 ring-blue-500 ring-offset-2 dark:ring-offset-zinc-900 bg-blue-50 dark:bg-blue-900/10'
-        : '';
+
     const showTopLine = isTarget && dragState?.type === 'insert' && dragState?.position === 'top';
     const showBottomLine = isTarget && dragState?.type === 'insert' && dragState?.position === 'bottom';
+    // Nest 样式稍微调优，更柔和
+    const nestClass = (isTarget && dragState?.type === 'nest')
+        ? 'ring-2 ring-blue-500 ring-offset-1 bg-blue-50/50 dark:bg-blue-900/20'
+        : '';
 
     if (isDragging) {
-        return (
-            <div ref={setNodeRef} style={style} className="opacity-40 bg-gray-200 dark:bg-zinc-800 rounded-lg h-12 border-2 border-dashed border-zinc-400 dark:border-zinc-600 mb-2" />
-        );
+        return <div ref={setNodeRef} style={style} className="opacity-40 bg-gray-200 dark:bg-zinc-800 rounded-lg h-12 border-2 border-dashed border-zinc-400 mb-2" />;
     }
 
     return (
@@ -143,139 +131,149 @@ export const SortableTask: React.FC<Props> = ({
                     <div ref={setBotRef} className="absolute bottom-0 left-0 right-0 h-[20%] z-10 pointer-events-none" />
                 </>
             )}
-            {showTopLine && <div className="absolute -top-1.5 left-0 right-0 h-1 bg-blue-500 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.6)] z-20 pointer-events-none" />}
 
-            <div className={`group relative bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-lg shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden ${nestClass}`}>
+            {showTopLine && <div className="absolute -top-1.5 left-0 right-0 h-1 bg-blue-500 rounded-full z-20" />}
 
-                {/* 4. 优先级指示条 (Priority Indicator) - 卡片左侧的彩色竖条 */}
-                <div className={`absolute top-0 bottom-0 left-0 w-1 ${getPriorityColor(task.priority)} z-20`} />
+            {/* 卡片容器：
+                1. 移除了 border-l-[3px] 和 getPriorityBorderColor
+                2. 改为了 flex 布局，方便放置左侧指示条
+            */}
+            <div className={`group relative bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-lg shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden flex ${nestClass}`}>
 
-                {/* 进度条背景 */}
-                {showProgress && (
-                    <div className="absolute bottom-0 left-0 h-1 bg-gray-100 dark:bg-zinc-800 w-full">
-                        <div
-                            className={`h-full transition-all duration-500 ${progressPercent === 100 ? 'bg-green-500' : 'bg-blue-500'}`}
-                            style={{ width: `${progressPercent}%` }}
-                        />
-                    </div>
-                )}
+                {/* ★ 核心改动：内部悬浮指示条 (Internal Floating Pill) */}
+                {/* - w-1: 宽度 4px (比之前的 3px border 稍微饱满一点)
+                    - rounded-full: 两端圆角，看起来非常平滑
+                    - my-3: 上下留白，不顶到头，解决“割裂感”
+                    - ml-3: 左侧留白
+                    - shrink-0: 防止被挤压
+                */}
+                <div className={`shrink-0 w-1 rounded-full my-3 ml-3 transition-colors duration-300 ${getPriorityColor(task.priority)}`} />
 
-                <div className="flex items-start p-3 gap-2 pl-4"> {/* pl-4 为了避开左侧的优先级条 */}
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            onUpdate(task.id, { isExpanded: !task.isExpanded });
-                        }}
-                        className={`mt-0.5 p-0.5 rounded hover:bg-gray-100 dark:hover:bg-zinc-800 text-gray-400 ${totalSubtasks === 0 ? 'opacity-20 hover:opacity-100' : ''} z-20 relative`}
-                    >
-                        {task.isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                    </button>
+                {/* 右侧内容区域 (Flex-1) */}
+                <div className="flex-1 min-w-0 relative flex flex-col">
 
-                    {depth > 0 && (
-                        <div className="mt-0.5 z-20 relative" onPointerDown={e => e.stopPropagation()}>
-                            <input
-                                type="checkbox"
-                                checked={!!task.completed}
-                                onChange={() => onUpdate(task.id, { completed: !task.completed })}
-                                className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                    {/* 极细进度条 (绝对定位在底部) */}
+                    {showProgress && (
+                        <div className="absolute bottom-0 left-0 h-[2px] bg-gray-100 dark:bg-zinc-800 w-full z-20">
+                            <div
+                                className={`h-full transition-all duration-500 ${progressPercent === 100 ? 'bg-green-500' : 'bg-blue-500'}`}
+                                style={{ width: `${progressPercent}%` }}
                             />
                         </div>
                     )}
 
-                    <div className="flex-1 min-w-0 z-20 relative flex flex-col gap-1" {...attributes} {...(isEditing ? {} : listeners)}>
-                        {isEditing ? (
-                            <textarea
-                                ref={editInputRef}
-                                value={editContent}
-                                onChange={(e) => setEditContent(e.target.value)}
-                                onBlur={handleEditSubmit}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleEditSubmit(); }
-                                    if (e.key === 'Escape') { setEditContent(task.content); setIsEditing(false); }
+                    <div className="p-3 pl-2"> {/* pl-2 调整文字与指示条的间距 */}
+                        <div className="flex items-start gap-2">
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onUpdate(task.id, { isExpanded: !task.isExpanded });
                                 }}
-                                className="w-full bg-transparent border border-blue-500 rounded focus:outline-none text-sm p-2 resize-none block"
-                                onClick={(e) => e.stopPropagation()}
-                                onPointerDown={(e) => e.stopPropagation()}
-                                rows={3}
-                            />
-                        ) : (
-                            <div className="flex flex-col">
-                                <span
-                                    onDoubleClick={() => setIsEditing(true)}
-                                    className={`block text-sm text-gray-700 dark:text-gray-200 whitespace-pre-wrap break-words cursor-default transition-all ${task.completed ? 'line-through text-gray-400 dark:text-gray-500' : ''}`}
-                                >
-                                    {task.content}
-                                </span>
+                                className={`mt-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors ${totalSubtasks === 0 ? 'opacity-30 hover:opacity-100' : ''}`}
+                            >
+                                {task.isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                            </button>
 
-                                {showProgress && (
-                                    <div className="flex items-center gap-1.5 mt-1.5 w-fit">
-                                        <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border ${progressPercent === 100
-                                                ? 'bg-green-50 text-green-600 border-green-200 dark:bg-green-900/20 dark:border-green-900/50 dark:text-green-400'
-                                                : 'bg-gray-100 text-gray-500 border-gray-200 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-400'
-                                            }`}>
-                                            <CheckSquare size={10} />
-                                            <span>{completedSubtasks}/{totalSubtasks}</span>
-                                        </div>
+                            {depth > 0 && (
+                                <div className="mt-0.5" onPointerDown={e => e.stopPropagation()}>
+                                    <input
+                                        type="checkbox"
+                                        checked={!!task.completed}
+                                        onChange={() => onUpdate(task.id, { completed: !task.completed })}
+                                        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
+                                    />
+                                </div>
+                            )}
+
+                            <div className="flex-1 min-w-0" {...attributes} {...(isEditing ? {} : listeners)}>
+                                {isEditing ? (
+                                    <textarea
+                                        ref={editInputRef}
+                                        value={editContent}
+                                        onChange={(e) => setEditContent(e.target.value)}
+                                        onBlur={handleEditSubmit}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleEditSubmit(); }
+                                            if (e.key === 'Escape') { setEditContent(task.content); setIsEditing(false); }
+                                        }}
+                                        className="w-full bg-gray-50 dark:bg-zinc-800 rounded p-1.5 text-sm focus:outline-none resize-none block"
+                                        onClick={(e) => e.stopPropagation()}
+                                        onPointerDown={(e) => e.stopPropagation()}
+                                        rows={2}
+                                    />
+                                ) : (
+                                    <div
+                                        onDoubleClick={() => setIsEditing(true)}
+                                        className={`text-sm leading-relaxed text-gray-700 dark:text-gray-200 break-words ${task.completed ? 'line-through text-gray-400' : ''}`}
+                                    >
+                                        {task.content}
                                     </div>
                                 )}
                             </div>
-                        )}
-                    </div>
-
-                    {/* 右侧操作栏 */}
-                    <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity gap-1 z-20 relative self-start">
-
-                        {/* 5. ID 标识 (悬停显示) */}
-                        <div className="flex items-center gap-1 text-[10px] text-gray-400 select-none bg-gray-50 dark:bg-zinc-800 px-1.5 py-0.5 rounded border border-gray-100 dark:border-zinc-700 whitespace-nowrap" title={`Full ID: ${task.id}`}>
-                            <Hash size={10} />
-                            <span className="font-mono">{task.id.slice(-4)}</span>
                         </div>
 
-                        {task.createdAt && (
-                            <div className="flex items-center gap-1 text-[10px] text-gray-400 select-none bg-gray-50 dark:bg-zinc-800 px-1.5 py-0.5 rounded border border-gray-100 dark:border-zinc-700 whitespace-nowrap">
-                                <Clock size={10} />
-                                <span>{getRelativeTime(task.createdAt)}</span>
+                        {/* 进度胶囊 */}
+                        {showProgress && (
+                            <div className="mt-1.5 pl-6">
+                                <div className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full border ${progressPercent === 100
+                                        ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:border-green-900/50 dark:text-green-400'
+                                        : 'bg-gray-50 text-gray-500 border-gray-100 dark:bg-zinc-800/50 dark:border-zinc-700 dark:text-zinc-400'
+                                    }`}>
+                                    <CheckSquare size={10} />
+                                    <span>{completedSubtasks}/{totalSubtasks}</span>
+                                </div>
                             </div>
                         )}
 
-                        <button onClick={() => setIsAddingChild(true)} className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded hover:bg-gray-100 dark:hover:bg-zinc-800"><Plus size={14} /></button>
+                        {/* 悬停展开的操作栏 */}
+                        <div className="grid grid-rows-[0fr] group-hover:grid-rows-[1fr] transition-[grid-template-rows] duration-200 ease-out">
+                            <div className="overflow-hidden">
+                                <div className="pt-2 pl-6 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity duration-300 delay-75">
+                                    <div className="flex items-center gap-2 text-[10px] text-gray-300 dark:text-zinc-600 font-mono select-none">
+                                        <span>#{task.id.slice(-4)}</span>
+                                        {task.createdAt && <span>• {getRelativeTime(task.createdAt)}</span>}
+                                    </div>
 
-                        <Menu trigger={<button className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded hover:bg-gray-100 dark:hover:bg-zinc-800 cursor-pointer"><MoreVertical size={14} /></button>}>
+                                    <div className="flex items-center gap-1">
+                                        <button onClick={() => setIsAddingChild(true)} className="p-1 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 rounded hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors">
+                                            <Plus size={14} />
+                                        </button>
 
-                            {/* 4. 优先级设置菜单 */}
-                            <div className="px-2 py-1 text-xs text-gray-400 uppercase mt-1">Priority</div>
-                            <MenuItem onClick={() => onUpdate(task.id, { priority: 'high' })}>
-                                <div className="flex items-center gap-2 text-red-600"><Flag size={14} /> High</div>
-                            </MenuItem>
-                            <MenuItem onClick={() => onUpdate(task.id, { priority: 'medium' })}>
-                                <div className="flex items-center gap-2 text-orange-500"><Flag size={14} /> Medium</div>
-                            </MenuItem>
-                            <MenuItem onClick={() => onUpdate(task.id, { priority: 'low' })}>
-                                <div className="flex items-center gap-2 text-blue-500"><Flag size={14} /> Low</div>
-                            </MenuItem>
-                            <MenuItem onClick={() => onUpdate(task.id, { priority: undefined })}>
-                                <div className="flex items-center gap-2 text-gray-500"><Flag size={14} /> None</div>
-                            </MenuItem>
-
-                            <div className="my-1 border-t border-gray-100 dark:border-zinc-800" />
-                            <MenuItem onClick={() => setIsEditing(true)}><div className="flex items-center gap-2"><Edit2 size={14} /> Edit Text</div></MenuItem>
-                            <MenuItem onClick={() => onClone(task.id)}><div className="flex items-center gap-2"><Copy size={14} /> Duplicate</div></MenuItem>
-
-                            <div className="my-1 border-t border-gray-100 dark:border-zinc-800" />
-                            <div className="px-2 py-1 text-xs text-gray-400 uppercase">Move To</div>
-                            <MenuItem onClick={() => onMoveToColumn(task.id, 'backlog')}>Backlog</MenuItem>
-                            <MenuItem onClick={() => onMoveToColumn(task.id, 'todo')}>To Do</MenuItem>
-                            <MenuItem onClick={() => onMoveToColumn(task.id, 'in-progress')}>In Progress</MenuItem>
-                            <MenuItem onClick={() => onMoveToColumn(task.id, 'done')}>Done</MenuItem>
-
-                            <div className="my-1 border-t border-gray-100 dark:border-zinc-800" />
-                            <MenuItem onClick={() => onDelete(task.id)} className="text-red-600 dark:text-red-400"><div className="flex items-center gap-2"><Trash size={14} /> Delete</div></MenuItem>
-                        </Menu>
+                                        <Menu trigger={
+                                            <button className="p-1 text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 rounded hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors">
+                                                <MoreHorizontal size={14} />
+                                            </button>
+                                        }>
+                                            <div className="px-2 py-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Priority</div>
+                                            <div className="grid grid-cols-4 gap-1 px-2 mb-2">
+                                                <button onClick={() => onUpdate(task.id, { priority: 'high' })} className="h-6 rounded bg-red-100 hover:ring-2 ring-red-500 flex items-center justify-center text-red-600"><Flag size={12} fill="currentColor" /></button>
+                                                <button onClick={() => onUpdate(task.id, { priority: 'medium' })} className="h-6 rounded bg-orange-100 hover:ring-2 ring-orange-500 flex items-center justify-center text-orange-600"><Flag size={12} fill="currentColor" /></button>
+                                                <button onClick={() => onUpdate(task.id, { priority: 'low' })} className="h-6 rounded bg-blue-100 hover:ring-2 ring-blue-500 flex items-center justify-center text-blue-600"><Flag size={12} fill="currentColor" /></button>
+                                                <button onClick={() => onUpdate(task.id, { priority: undefined })} className="h-6 rounded bg-gray-100 hover:ring-2 ring-gray-400 flex items-center justify-center text-gray-400"><Flag size={12} /></button>
+                                            </div>
+                                            <div className="h-px bg-gray-100 dark:bg-zinc-800 my-1" />
+                                            <MenuItem onClick={() => setIsEditing(true)}><div className="flex items-center gap-2"><Edit2 size={14} /> Edit</div></MenuItem>
+                                            <MenuItem onClick={() => onClone(task.id)}><div className="flex items-center gap-2"><Copy size={14} /> Duplicate</div></MenuItem>
+                                            <div className="h-px bg-gray-100 dark:bg-zinc-800 my-1" />
+                                            <div className="px-2 py-1 text-[10px] text-gray-400 uppercase">Move To</div>
+                                            <MenuItem onClick={() => onMoveToColumn(task.id, 'backlog')}>Backlog</MenuItem>
+                                            <MenuItem onClick={() => onMoveToColumn(task.id, 'todo')}>To Do</MenuItem>
+                                            <MenuItem onClick={() => onMoveToColumn(task.id, 'in-progress')}>In Progress</MenuItem>
+                                            <MenuItem onClick={() => onMoveToColumn(task.id, 'done')}>Done</MenuItem>
+                                            <div className="h-px bg-gray-100 dark:bg-zinc-800 my-1" />
+                                            <MenuItem onClick={() => onDelete(task.id)} className="text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20">
+                                                <div className="flex items-center gap-2"><Trash size={14} /> Delete</div>
+                                            </MenuItem>
+                                        </Menu>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            {showBottomLine && <div className="absolute -bottom-1.5 left-0 right-0 h-1 bg-blue-500 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.6)] z-20 pointer-events-none" />}
+            {showBottomLine && <div className="absolute -bottom-1.5 left-0 right-0 h-1 bg-blue-500 rounded-full z-20" />}
 
             {(task.isExpanded || isAddingChild) && (
                 <div className="ml-6 border-l border-gray-200 dark:border-zinc-800 pl-2 mt-1 space-y-1">
@@ -295,8 +293,8 @@ export const SortableTask: React.FC<Props> = ({
                         ))}
                     </SortableContext>
                     {isAddingChild && (
-                        <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-lg p-2 shadow-sm animate-in fade-in slide-in-from-top-1 duration-150">
-                            <input ref={addChildInputRef} value={newChildContent} onChange={(e) => setNewChildContent(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') handleAddChildSubmit(); if (e.key === 'Escape') setIsAddingChild(false); }} onBlur={() => { if (!newChildContent) setIsAddingChild(false); }} placeholder="Subtask..." className="w-full bg-transparent text-sm focus:outline-none" />
+                        <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-lg p-2 shadow-sm animate-in fade-in zoom-in-95 duration-100">
+                            <input ref={addChildInputRef} value={newChildContent} onChange={(e) => setNewChildContent(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') handleAddChildSubmit(); if (e.key === 'Escape') setIsAddingChild(false); }} onBlur={() => { if (!newChildContent) setIsAddingChild(false); }} placeholder="Type a subtask..." className="w-full bg-transparent text-sm focus:outline-none placeholder:text-gray-400" />
                         </div>
                     )}
                 </div>
