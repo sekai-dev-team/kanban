@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useSortable, SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { useDroppable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
-import { MoreVertical, ChevronRight, ChevronDown, Plus, Copy, Trash, Edit2 } from 'lucide-react';
+import { MoreVertical, ChevronRight, ChevronDown, Plus, Copy, Trash, Edit2, Clock } from 'lucide-react';
 import { Task, ColumnId, DragState } from '../types';
 import { Menu, MenuItem } from './ui';
 
@@ -18,6 +18,20 @@ interface Props {
     dragState: DragState | null; // 全局拖拽视觉状态
     isOverlay?: boolean; // 新增：是否是拖拽预览层
 }
+
+// --- 新增：相对时间计算辅助函数 ---
+const getRelativeTime = (timestamp: number) => {
+    if (!timestamp) return '';
+    const diff = Date.now() - timestamp;
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
+
+    if (minutes < 1) return 'Just now';
+    if (minutes < 60) return `${minutes}m ago`;
+    if (hours < 24) return `${hours}h ago`;
+    return `${days}d ago`;
+};
 
 export const SortableTask: React.FC<Props> = ({
     task,
@@ -191,7 +205,13 @@ export const SortableTask: React.FC<Props> = ({
                         )}
                     </div>
 
-                    <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity gap-1 z-20 relative">
+                    <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity gap-1 z-20 relative">                        {/* 悬停显示：创建时间 */}
+                        {task.createdAt && (
+                            <div className="flex items-center gap-1 mr-2 text-[10px] text-gray-400 select-none bg-gray-50 dark:bg-zinc-800 px-1.5 py-0.5 rounded border border-gray-100 dark:border-zinc-700 whitespace-nowrap">
+                                <Clock size={10} />
+                                <span>{getRelativeTime(task.createdAt)}</span>
+                            </div>
+                        )}
                         <button
                             onClick={() => setIsAddingChild(true)}
                             className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded hover:bg-gray-100 dark:hover:bg-zinc-800"
