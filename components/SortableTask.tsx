@@ -4,9 +4,9 @@ import { useDroppable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import {
     MoreVertical, ChevronRight, ChevronDown, Plus, Copy, Trash, Edit2,
-    Clock, CheckSquare // 引入 CheckSquare
+    Clock, CheckSquare, Hash, Flag // 新增 Hash (ID) 和 Flag (优先级) 图标
 } from 'lucide-react';
-import { Task, ColumnId, DragState } from '../types';
+import { Task, ColumnId, DragState, Priority } from '../types';
 import { Menu, MenuItem } from './ui';
 
 // Props 定义
@@ -35,6 +35,16 @@ const getRelativeTime = (timestamp: number) => {
     return `${days}d ago`;
 };
 
+// 优先级颜色映射辅助函数
+const getPriorityColor = (priority?: Priority) => {
+    switch (priority) {
+        case 'high': return 'bg-red-500';
+        case 'medium': return 'bg-orange-400';
+        case 'low': return 'bg-blue-400';
+        default: return 'bg-transparent';
+    }
+};
+
 export const SortableTask: React.FC<Props> = ({
     task,
     depth = 0,
@@ -58,7 +68,6 @@ export const SortableTask: React.FC<Props> = ({
         data: { type: 'Task', task }
     });
 
-    // Explicit Drop Zones
     const { setNodeRef: setTopRef } = useDroppable({ id: `${task.id}-top`, disabled: isOverlay });
     const { setNodeRef: setMidRef } = useDroppable({ id: `${task.id}-mid`, disabled: isOverlay });
     const { setNodeRef: setBotRef } = useDroppable({ id: `${task.id}-bot`, disabled: isOverlay });
@@ -106,11 +115,9 @@ export const SortableTask: React.FC<Props> = ({
         }
     };
 
-    // --- 逻辑区：计算进度 ---
     const totalSubtasks = task.children.length;
     const completedSubtasks = task.children.filter(t => t.completed).length;
     const progressPercent = totalSubtasks === 0 ? 0 : Math.round((completedSubtasks / totalSubtasks) * 100);
-    // 只有当有子任务时才显示进度条
     const showProgress = totalSubtasks > 0;
 
     const style = { transition };
@@ -138,10 +145,12 @@ export const SortableTask: React.FC<Props> = ({
             )}
             {showTopLine && <div className="absolute -top-1.5 left-0 right-0 h-1 bg-blue-500 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.6)] z-20 pointer-events-none" />}
 
-            {/* 卡片主体容器 */}
             <div className={`group relative bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-lg shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden ${nestClass}`}>
 
-                {/* 1. 进度条 (Progress Bar) - 位于卡片最底部背景 */}
+                {/* 4. 优先级指示条 (Priority Indicator) - 卡片左侧的彩色竖条 */}
+                <div className={`absolute top-0 bottom-0 left-0 w-1 ${getPriorityColor(task.priority)} z-20`} />
+
+                {/* 进度条背景 */}
                 {showProgress && (
                     <div className="absolute bottom-0 left-0 h-1 bg-gray-100 dark:bg-zinc-800 w-full">
                         <div
@@ -151,8 +160,7 @@ export const SortableTask: React.FC<Props> = ({
                     </div>
                 )}
 
-                <div className="flex items-start p-3 gap-2">
-                    {/* 折叠/展开按钮 */}
+                <div className="flex items-start p-3 gap-2 pl-4"> {/* pl-4 为了避开左侧的优先级条 */}
                     <button
                         onClick={(e) => {
                             e.stopPropagation();
@@ -163,7 +171,6 @@ export const SortableTask: React.FC<Props> = ({
                         {task.isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                     </button>
 
-                    {/* 2. 复选框 (仅子任务显示) */}
                     {depth > 0 && (
                         <div className="mt-0.5 z-20 relative" onPointerDown={e => e.stopPropagation()}>
                             <input
@@ -175,7 +182,6 @@ export const SortableTask: React.FC<Props> = ({
                         </div>
                     )}
 
-                    {/* 内容区域 */}
                     <div className="flex-1 min-w-0 z-20 relative flex flex-col gap-1" {...attributes} {...(isEditing ? {} : listeners)}>
                         {isEditing ? (
                             <textarea
@@ -201,7 +207,6 @@ export const SortableTask: React.FC<Props> = ({
                                     {task.content}
                                 </span>
 
-                                {/* 3. 进度计数 (Progress Pill) - 显示在内容下方 */}
                                 {showProgress && (
                                     <div className="flex items-center gap-1.5 mt-1.5 w-fit">
                                         <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border ${progressPercent === 100
@@ -219,23 +224,50 @@ export const SortableTask: React.FC<Props> = ({
 
                     {/* 右侧操作栏 */}
                     <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity gap-1 z-20 relative self-start">
-                        {/* 创建时间 */}
+
+                        {/* 5. ID 标识 (悬停显示) */}
+                        <div className="flex items-center gap-1 text-[10px] text-gray-400 select-none bg-gray-50 dark:bg-zinc-800 px-1.5 py-0.5 rounded border border-gray-100 dark:border-zinc-700 whitespace-nowrap" title={`Full ID: ${task.id}`}>
+                            <Hash size={10} />
+                            <span className="font-mono">{task.id.slice(-4)}</span>
+                        </div>
+
                         {task.createdAt && (
-                            <div className="flex items-center gap-1 mr-2 text-[10px] text-gray-400 select-none bg-gray-50 dark:bg-zinc-800 px-1.5 py-0.5 rounded border border-gray-100 dark:border-zinc-700 whitespace-nowrap">
+                            <div className="flex items-center gap-1 text-[10px] text-gray-400 select-none bg-gray-50 dark:bg-zinc-800 px-1.5 py-0.5 rounded border border-gray-100 dark:border-zinc-700 whitespace-nowrap">
                                 <Clock size={10} />
                                 <span>{getRelativeTime(task.createdAt)}</span>
                             </div>
                         )}
+
                         <button onClick={() => setIsAddingChild(true)} className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded hover:bg-gray-100 dark:hover:bg-zinc-800"><Plus size={14} /></button>
+
                         <Menu trigger={<button className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded hover:bg-gray-100 dark:hover:bg-zinc-800 cursor-pointer"><MoreVertical size={14} /></button>}>
+
+                            {/* 4. 优先级设置菜单 */}
+                            <div className="px-2 py-1 text-xs text-gray-400 uppercase mt-1">Priority</div>
+                            <MenuItem onClick={() => onUpdate(task.id, { priority: 'high' })}>
+                                <div className="flex items-center gap-2 text-red-600"><Flag size={14} /> High</div>
+                            </MenuItem>
+                            <MenuItem onClick={() => onUpdate(task.id, { priority: 'medium' })}>
+                                <div className="flex items-center gap-2 text-orange-500"><Flag size={14} /> Medium</div>
+                            </MenuItem>
+                            <MenuItem onClick={() => onUpdate(task.id, { priority: 'low' })}>
+                                <div className="flex items-center gap-2 text-blue-500"><Flag size={14} /> Low</div>
+                            </MenuItem>
+                            <MenuItem onClick={() => onUpdate(task.id, { priority: undefined })}>
+                                <div className="flex items-center gap-2 text-gray-500"><Flag size={14} /> None</div>
+                            </MenuItem>
+
+                            <div className="my-1 border-t border-gray-100 dark:border-zinc-800" />
                             <MenuItem onClick={() => setIsEditing(true)}><div className="flex items-center gap-2"><Edit2 size={14} /> Edit Text</div></MenuItem>
                             <MenuItem onClick={() => onClone(task.id)}><div className="flex items-center gap-2"><Copy size={14} /> Duplicate</div></MenuItem>
+
                             <div className="my-1 border-t border-gray-100 dark:border-zinc-800" />
                             <div className="px-2 py-1 text-xs text-gray-400 uppercase">Move To</div>
                             <MenuItem onClick={() => onMoveToColumn(task.id, 'backlog')}>Backlog</MenuItem>
                             <MenuItem onClick={() => onMoveToColumn(task.id, 'todo')}>To Do</MenuItem>
                             <MenuItem onClick={() => onMoveToColumn(task.id, 'in-progress')}>In Progress</MenuItem>
                             <MenuItem onClick={() => onMoveToColumn(task.id, 'done')}>Done</MenuItem>
+
                             <div className="my-1 border-t border-gray-100 dark:border-zinc-800" />
                             <MenuItem onClick={() => onDelete(task.id)} className="text-red-600 dark:text-red-400"><div className="flex items-center gap-2"><Trash size={14} /> Delete</div></MenuItem>
                         </Menu>

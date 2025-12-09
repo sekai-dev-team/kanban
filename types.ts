@@ -4,7 +4,7 @@
 // 定义列的ID，限制只能是这四个字符串之一。
 // 这叫 "Union Type" (联合类型)。
 export type ColumnId = 'backlog' | 'todo' | 'in-progress' | 'done';
-
+export type Priority = 'low' | 'medium' | 'high';
 // 核心：任务的定义
 export interface Task {
     id: string;        // 唯一标识符，用于 React 渲染列表时的 key 和拖拽识别
@@ -17,7 +17,8 @@ export interface Task {
     children: Task[];
 
     isExpanded?: boolean; // 可选属性 (?)：记录当前卡片是否展开显示了子任务
-    completed?: boolean;
+    completed?: boolean; // 标记任务是否完成
+    priority?: Priority; // 标记任务的重要程度
 }
 
 // 项目的定义
