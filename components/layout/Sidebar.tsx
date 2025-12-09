@@ -47,7 +47,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <div className="w-8 h-8 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-lg flex items-center justify-center">
                         <Layout size={18} strokeWidth={2.5} />
                     </div>
-                    <h1 className="font-bold text-lg tracking-tight">ZenBoard</h1>
+                    <h1 className="font-bold text-lg tracking-tight">SekaiBoard</h1>
                 </div>
             </div>
 
@@ -83,8 +83,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             }`}
                     >
                         <div className="flex items-center gap-2 truncate">
-                            <Folder size={16} className={project.id === activeProject?.id ? 'fill-current opacity-20' : ''} />
-                            <span className="truncate">{project.name}</span>
+                            <Folder size={16} className={`shrink-0 ${project.id === activeProject?.id ? 'fill-current opacity-20' : ''}`} />
+                            <span className="truncate" title={project.name}>{project.name}</span>
                         </div>
                         {data.projects.length > 1 && (
                             <button

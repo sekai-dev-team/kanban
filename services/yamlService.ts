@@ -3,7 +3,7 @@ import { AppData, Project } from '../types';
 
 // 定义一个固定的 ID，后端会生成 data/main-board-data.yaml
 // 这样整个 App 的所有项目都存在这一个文件里
-const API_BASE_URL = 'http://10.239.88.106:8000';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
 export const DEFAULT_DATA: AppData = {
     projects: [],

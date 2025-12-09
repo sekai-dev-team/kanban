@@ -29,7 +29,7 @@ export const Column: React.FC<Props> = ({
   onAddTask, 
   onUpdateTask,
   onDeleteTask, 
-  onAddChild,
+  onAddChild, 
   onMoveToColumn,
   onClone,
   wipLimit,
@@ -76,7 +76,7 @@ export const Column: React.FC<Props> = ({
   return (
     <div 
       ref={setNodeRef} 
-      className="flex flex-col h-full min-w-[280px] w-full max-w-[350px] relative"
+      className="flex flex-col h-fit min-w-[280px] w-full max-w-[350px] relative"
     >
       {/* Visual Indicator: Insert at Top */}
       {showTopLine && (
@@ -124,7 +124,7 @@ export const Column: React.FC<Props> = ({
       </div>
 
       <div 
-        className={`flex-1 bg-gray-50/50 dark:bg-zinc-900/20 rounded-xl p-2 border transition-colors relative flex flex-col ${
+        className={`bg-gray-50/50 dark:bg-zinc-900/20 rounded-xl p-2 border transition-colors relative flex flex-col ${
            isOverLimit ? 'border-red-200 dark:border-red-900/50 bg-red-50/30' : 'border-transparent'
         }`}
       >

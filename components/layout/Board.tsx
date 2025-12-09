@@ -57,7 +57,7 @@ export const Board: React.FC<BoardProps> = ({
     , [activeProject, countLeaves]);
 
     return (
-        <div className="flex-1 overflow-x-auto overflow-y-hidden p-6">
+        <div className="flex-1 overflow-x-auto overflow-y-auto p-6">
             <DndContext
                 sensors={sensors}
                 collisionDetection={pointerWithin}
@@ -65,7 +65,7 @@ export const Board: React.FC<BoardProps> = ({
                 onDragOver={onDragOver}
                 onDragEnd={onDragEnd}
             >
-                <div className="flex h-full gap-6 min-w-max pb-4">
+                <div className="flex h-fit min-h-full gap-6 min-w-max pb-4">
                     {COLUMNS.map(col => (
                         <Column
                             key={col.id}
