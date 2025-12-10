@@ -2,7 +2,7 @@ import React from 'react';
 import { 
   Layout, Folder, Trash, Plus, Database, Moon, Sun, Search 
 } from 'lucide-react';
-import { Project, AppData } from '../../types';
+import { AppData } from '../../types';
 import { Button } from '../ui';
 import { exportToYaml } from '../../services/yamlService';
 
@@ -19,6 +19,8 @@ interface SidebarProps {
     setIsYamlModalOpen: (isOpen: boolean) => void;
     setYamlContent: (content: string) => void;
     toggleTheme: () => void;
+    // 新增：回到首页的回调
+    onGoHome: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -33,21 +35,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
     setIsProjectModalOpen,
     setIsYamlModalOpen,
     setYamlContent,
-    toggleTheme
+    toggleTheme,
+    onGoHome // 解构新增属性
 }) => {
-    const activeProject = data.projects.find(p => p.id === data.activeProjectId) || data.projects[0];
+    const activeProject = data.projects.find(p => p.id === data.activeProjectId);
     const filteredProjects = (data.projects || []).filter(p =>
         p.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
     return (
         <aside className={`w-64 bg-white dark:bg-zinc-900 border-r border-gray-200 dark:border-zinc-800 flex flex-col z-20 shadow-sm transition-all duration-300 ${isSearchOpen ? 'w-72' : ''}`}>
-            <div className="p-6 flex items-center justify-between">
+            {/* Logo Area - Made Clickable */}
+            <div 
+                className="p-6 flex items-center justify-between cursor-pointer group"
+                onClick={onGoHome}
+                title="Go to Dashboard"
+            >
                 <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-lg flex items-center justify-center">
+                    <div className="w-8 h-8 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-lg flex items-center justify-center group-hover:scale-105 transition-transform">
                         <Layout size={18} strokeWidth={2.5} />
                     </div>
-                    <h1 className="font-bold text-lg tracking-tight">SekaiBoard</h1>
+                    <h1 className="font-bold text-lg tracking-tight group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                        SekaiBoard
+                    </h1>
                 </div>
             </div>
 
@@ -68,7 +78,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto px-4 py-2 space-y-1">
+            <div className="flex-1 overflow-y-auto px-4 py-2 space-y-1 custom-scrollbar">
                 <div className="text-xs font-semibold text-gray-400 dark:text-zinc-500 uppercase tracking-wider mb-2 px-2">Projects</div>
                 {filteredProjects.map(project => (
                     <div
@@ -77,26 +87,34 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             setActiveProjectId(project.id);
                             setSearchQuery('');
                         }}
-                        className={`group flex items-center justify-between px-3 py-2.5 rounded-lg text-sm cursor-pointer transition-all ${project.id === activeProject?.id
+                        className={`group flex items-center justify-between px-3 py-2.5 rounded-lg text-sm cursor-pointer transition-all ${
+                            // 只有当存在 activeProject 且 ID 匹配时才高亮
+                            activeProject?.id === project.id
                             ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white font-medium'
                             : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-zinc-800/50 hover:text-gray-900 dark:hover:text-gray-200'
                             }`}
                     >
                         <div className="flex items-center gap-2 truncate">
-                            <Folder size={16} className={`shrink-0 ${project.id === activeProject?.id ? 'fill-current opacity-20' : ''}`} />
+                            {/* 这里的文件夹图标也可以根据 project.status 变色，如果你想的话 */}
+                            <Folder size={16} className={`shrink-0 ${activeProject?.id === project.id ? 'fill-current opacity-20' : ''}`} />
                             <span className="truncate" title={project.name}>{project.name}</span>
                         </div>
-                        {data.projects.length > 1 && (
-                            <button
-                                type="button"
-                                onClick={(e) => { e.stopPropagation(); setProjectToDelete(project.id); }}
-                                className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-red-100 dark:hover:bg-red-900/30 text-red-500 rounded transition-all focus:opacity-100 focus:outline-none"
-                            >
-                                <Trash size={12} className="pointer-events-none" />
-                            </button>
-                        )}
+                        {/* 删除按钮逻辑保持不变 */}
+                        <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setProjectToDelete(project.id); }}
+                            className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-red-100 dark:hover:bg-red-900/30 text-red-500 rounded transition-all focus:opacity-100 focus:outline-none"
+                        >
+                            <Trash size={12} className="pointer-events-none" />
+                        </button>
                     </div>
                 ))}
+                
+                {filteredProjects.length === 0 && (
+                    <div className="px-3 py-4 text-center text-xs text-gray-400">
+                        No projects found
+                    </div>
+                )}
             </div>
 
             <div className="p-4 border-t border-gray-200 dark:border-zinc-800 space-y-2">

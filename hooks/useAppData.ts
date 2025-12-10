@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { nanoid } from 'nanoid';
-import { AppData, Project, Task, ColumnId } from '../types';
+import { arrayMove } from '@dnd-kit/sortable';
+import { AppData, Project, Task, ColumnId, ProjectStatus } from '../types';
 import { saveToServer, loadFromServer } from '../services/yamlService';
 
 const STORAGE_KEY = "kanban-data";
@@ -70,7 +71,14 @@ export const useAppData = () => {
                 if (serverData && serverData.projects && serverData.projects.length > 0) {
                     // We loaded data, we don't want this to trigger a save immediately
                     // The main Save Effect checks isFirstLoad, which handles this.
-                    setData(serverData);
+                    // 兼容性处理：如果老数据没有 status 字段，给个默认值
+                    const patchedProjects = serverData.projects.map(p => ({
+                        ...p,
+                        status: p.status || 'active',
+                        createdAt: p.createdAt || Date.now(),
+                        updatedAt: p.updatedAt || Date.now()
+                    }));
+                    setData({ ...serverData, projects: patchedProjects });
                     if (serverData.theme === 'dark') document.documentElement.classList.add('dark');
                 } else {
                     setData({
@@ -153,6 +161,15 @@ export const useAppData = () => {
     }, [data, isLoading, doSave]);
 
     // --- Actions ---
+    // 辅助：更新项目的 updatedAt 时间戳
+    const touchProject = (projectId: string) => {
+        return (p: Project) => {
+            if (p.id === projectId) {
+                return { ...p, updatedAt: Date.now() };
+            }
+            return p;
+        };
+    };
 
     const addProject = useCallback((name: string) => {
         const newProject: Project = {
@@ -160,12 +177,23 @@ export const useAppData = () => {
             name,
             description: '',
             wipLimit: 3,
+            status: 'active', // 默认新建的项目都是活跃的
             columns: { backlog: [], todo: [], 'in-progress': [], done: [] }
         };
         setData(prev => ({
             ...prev,
             projects: [...prev.projects, newProject],
             activeProjectId: newProject.id
+        }));
+    }, []);
+
+    // 更新项目状态 (用于拖拽归档)
+    const updateProjectStatus = useCallback((projectId: string, status: ProjectStatus) => {
+        setData(prev => ({
+            ...prev,
+            projects: prev.projects.map(p => 
+                p.id === projectId ? { ...p, status, updatedAt: Date.now() } : p
+            )
         }));
     }, []);
 
@@ -190,6 +218,7 @@ export const useAppData = () => {
             return {
                 ...prev,
                 projects: remaining,
+                // 如果删除的是当前项目，切换到第一个，否则保持不变
                 activeProjectId: prev.activeProjectId === projectId ? remaining[0].id : prev.activeProjectId
             };
         });
@@ -202,6 +231,7 @@ export const useAppData = () => {
                 if (p.id !== projectId) return p;
                 return {
                     ...p,
+                    updatedAt: Date.now(),
                     columns: {
                         ...p.columns,
                         [columnId]: [...p.columns[columnId], newTask]
@@ -227,7 +257,7 @@ export const useAppData = () => {
                 (Object.keys(newCols) as ColumnId[]).forEach(k => {
                     newCols[k] = updateRecursive(newCols[k]);
                 });
-                return { ...p, columns: newCols };
+                return { ...p, updatedAt: Date.now(), columns: newCols };
             })
         }));
     }, []);
@@ -248,7 +278,7 @@ export const useAppData = () => {
                 (Object.keys(newCols) as ColumnId[]).forEach(k => {
                     newCols[k] = addRecursive(newCols[k]);
                 });
-                return { ...p, columns: newCols };
+                return { ...p, updatedAt: Date.now(), columns: newCols };
             })
         }));
     }, []);
@@ -262,7 +292,7 @@ export const useAppData = () => {
                 (Object.keys(newCols) as ColumnId[]).forEach(k => {
                     newCols[k] = removeTask(newCols[k], taskId); 
                 });
-                return { ...p, columns: newCols };
+                return { ...p, updatedAt: Date.now(), columns: newCols };
             })
         }));
     }, []);
@@ -309,7 +339,7 @@ export const useAppData = () => {
                 if (taskToMove) {
                     newCols[targetColId] = [...newCols[targetColId], taskToMove];
                 }
-                return { ...p, columns: newCols };
+                return { ...p, updatedAt: Date.now(), columns: newCols };
             });
             return { ...prev, projects: projs };
         });
@@ -340,7 +370,7 @@ export const useAppData = () => {
                          }
                      });
                  }
-                 return { ...p, columns: newCols };
+                 return { ...p, updatedAt: Date.now(), columns: newCols };
              });
              return { ...prev, projects: projs };
          });
@@ -349,7 +379,7 @@ export const useAppData = () => {
     const updateProjectColumns = useCallback((projectId: string, newColumns: Record<ColumnId, Task[]>) => {
         setData(prev => ({
             ...prev,
-            projects: prev.projects.map(p => p.id === projectId ? { ...p, columns: newColumns } : p)
+            projects: prev.projects.map(p => p.id === projectId ? { ...p, columns: newColumns, updatedAt: Date.now()} : p)
         }));
     }, []);
 
@@ -361,6 +391,23 @@ export const useAppData = () => {
         setData(prev => ({ ...prev, theme: prev.theme === 'light' ? 'dark' : 'light' }));
     }, []);
 
+
+    // 项目排序方法
+    const moveProject = useCallback((activeId: string, overId: string) => {
+        setData((prev) => {
+            const oldIndex = prev.projects.findIndex((p) => p.id === activeId);
+            const newIndex = prev.projects.findIndex((p) => p.id === overId);
+
+            if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
+                return {
+                    ...prev,
+                    projects: arrayMove(prev.projects, oldIndex, newIndex),
+                };
+            }
+            return prev;
+        });
+    }, []);
+
     return {
         data,
         setData,
@@ -368,6 +415,7 @@ export const useAppData = () => {
         saveStatus,
         // Action methods
         addProject,
+        updateProjectStatus,
         updateProjectDescription,
         updateWipLimit,
         updateProjectColumns, // Added this
@@ -376,6 +424,7 @@ export const useAppData = () => {
         updateTask,
         addChildTask,
         deleteTask,
+        moveProject,
         moveToColumn,
         cloneTask,
         setActiveProjectId,

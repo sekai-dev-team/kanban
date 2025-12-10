@@ -5,6 +5,7 @@
 // 这叫 "Union Type" (联合类型)。
 export type ColumnId = 'backlog' | 'todo' | 'in-progress' | 'done';
 export type Priority = 'low' | 'medium' | 'high';
+export type ProjectStatus = 'backlog' | 'active' | 'completed';
 // 核心：任务的定义
 export interface Task {
     id: string;        // 唯一标识符，用于 React 渲染列表时的 key 和拖拽识别
@@ -27,6 +28,9 @@ export interface Project {
     name: string;
     description: string;
     wipLimit: number; // In-Progress 列的最大任务限制数 (WIP = Work In Progress)
+    status: ProjectStatus; // 生命周期状态
+    createdAt: number;     // 用于排序
+    updatedAt?: number;    // 用于显示 "Last updated"
 
     // columns 是一个对象映射
     // Key 必须是 ColumnId 类型，Value 是 Task 数组
