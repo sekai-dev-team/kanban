@@ -39,7 +39,7 @@ const DashboardColumn = ({ id, label, projects, onProjectClick }: {
     const { setNodeRef } = useDroppable({ id });
 
     return (
-        <div className="flex-1 flex flex-col min-w-[300px]">
+        <div className="flex-1 flex flex-col min-w-[300px] h-full overflow-hidden">
             {/* Column Header */}
             <div className="flex items-center justify-between mb-4 px-1">
                 <div className="flex items-center gap-2">
@@ -51,7 +51,10 @@ const DashboardColumn = ({ id, label, projects, onProjectClick }: {
             </div>
 
             {/* Droppable Area */}
-            <div ref={setNodeRef} className="flex-1 rounded-xl bg-gray-50/50 dark:bg-zinc-900/20 p-4 border border-transparent transition-colors hover:border-gray-200 dark:hover:border-zinc-800/50">
+            <div 
+                ref={setNodeRef} 
+                className="flex-1 rounded-xl bg-gray-50/50 dark:bg-zinc-900/20 p-4 border border-transparent transition-colors hover:border-gray-200 dark:hover:border-zinc-800/50 overflow-y-auto custom-scrollbar"
+            >               
                 <SortableContext items={projects.map(p => p.id)} strategy={verticalListSortingStrategy}>
                     <div className="flex flex-col gap-4">
                         {projects.map(project => (
