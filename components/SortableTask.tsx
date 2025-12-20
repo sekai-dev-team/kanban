@@ -200,7 +200,14 @@ export const SortableTask: React.FC<Props> = ({
                     {/* 优化点 2：Content Padding 收紧
                        py-2 pr-2 pl-2: 上下右左都设为 8px (之前是 12px)，让内容更饱满
                     */}
-                    <div className="py-2 pr-2 pl-2">
+                    <div 
+                        className={`py-2 pr-2 pl-2 ${totalSubtasks > 0 ? 'cursor-pointer' : ''}`}
+                        onClick={() => {
+                            if (totalSubtasks > 0 && !isEditing) {
+                                onUpdate(task.id, { isExpanded: !task.isExpanded });
+                            }
+                        }}
+                    >
                         <div className="flex items-start gap-1.5"> {/* gap-1.5 (6px) 比 gap-2 更紧凑 */}
 
                             {/* 优化点 3：对齐修正
@@ -269,36 +276,44 @@ export const SortableTask: React.FC<Props> = ({
                                     </div>
 
                                     <div className="flex items-center gap-1">
-                                        <button onClick={() => setIsAddingChild(true)} className="p-1 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 rounded hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors">
+                                        <button 
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setIsAddingChild(true);
+                                            }} 
+                                            className="p-1 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 rounded hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors"
+                                        >
                                             <Plus size={14} />
                                         </button>
 
-                                        <Menu trigger={
-                                            <button className="p-1 text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 rounded hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors">
-                                                <MoreHorizontal size={14} />
-                                            </button>
-                                        }>
-                                            <div className="px-2 py-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Priority</div>
-                                            <div className="grid grid-cols-4 gap-1 px-2 mb-2">
-                                                <button onClick={() => onUpdate(task.id, { priority: 'high' })} className="h-6 rounded bg-red-100 hover:ring-2 ring-red-500 flex items-center justify-center text-red-600"><Flag size={12} fill="currentColor" /></button>
-                                                <button onClick={() => onUpdate(task.id, { priority: 'medium' })} className="h-6 rounded bg-orange-100 hover:ring-2 ring-orange-500 flex items-center justify-center text-orange-600"><Flag size={12} fill="currentColor" /></button>
-                                                <button onClick={() => onUpdate(task.id, { priority: 'low' })} className="h-6 rounded bg-blue-100 hover:ring-2 ring-blue-500 flex items-center justify-center text-blue-600"><Flag size={12} fill="currentColor" /></button>
-                                                <button onClick={() => onUpdate(task.id, { priority: undefined })} className="h-6 rounded bg-gray-100 hover:ring-2 ring-gray-400 flex items-center justify-center text-gray-400"><Flag size={12} /></button>
-                                            </div>
-                                            <div className="h-px bg-gray-100 dark:bg-zinc-800 my-1" />
-                                            <MenuItem onClick={() => setIsEditing(true)}><div className="flex items-center gap-2"><Edit2 size={14} /> Edit</div></MenuItem>
-                                            <MenuItem onClick={() => onClone(task.id)}><div className="flex items-center gap-2"><Copy size={14} /> Duplicate</div></MenuItem>
-                                            <div className="h-px bg-gray-100 dark:bg-zinc-800 my-1" />
-                                            <div className="px-2 py-1 text-[10px] text-gray-400 uppercase">Move To</div>
-                                            <MenuItem onClick={() => onMoveToColumn(task.id, 'backlog')}>Backlog</MenuItem>
-                                            <MenuItem onClick={() => onMoveToColumn(task.id, 'todo')}>To Do</MenuItem>
-                                            <MenuItem onClick={() => onMoveToColumn(task.id, 'in-progress')}>In Progress</MenuItem>
-                                            <MenuItem onClick={() => onMoveToColumn(task.id, 'done')}>Done</MenuItem>
-                                            <div className="h-px bg-gray-100 dark:bg-zinc-800 my-1" />
-                                            <MenuItem onClick={() => onDelete(task.id)} className="text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20">
-                                                <div className="flex items-center gap-2"><Trash size={14} /> Delete</div>
-                                            </MenuItem>
-                                        </Menu>
+                                        <div onClick={(e) => e.stopPropagation()}>
+                                            <Menu trigger={
+                                                <button className="p-1 text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 rounded hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors">
+                                                    <MoreHorizontal size={14} />
+                                                </button>
+                                            }>
+                                                <div className="px-2 py-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Priority</div>
+                                                <div className="grid grid-cols-4 gap-1 px-2 mb-2">
+                                                    <button onClick={() => onUpdate(task.id, { priority: 'high' })} className="h-6 rounded bg-red-100 hover:ring-2 ring-red-500 flex items-center justify-center text-red-600"><Flag size={12} fill="currentColor" /></button>
+                                                    <button onClick={() => onUpdate(task.id, { priority: 'medium' })} className="h-6 rounded bg-orange-100 hover:ring-2 ring-orange-500 flex items-center justify-center text-orange-600"><Flag size={12} fill="currentColor" /></button>
+                                                    <button onClick={() => onUpdate(task.id, { priority: 'low' })} className="h-6 rounded bg-blue-100 hover:ring-2 ring-blue-500 flex items-center justify-center text-blue-600"><Flag size={12} fill="currentColor" /></button>
+                                                    <button onClick={() => onUpdate(task.id, { priority: undefined })} className="h-6 rounded bg-gray-100 hover:ring-2 ring-gray-400 flex items-center justify-center text-gray-400"><Flag size={12} /></button>
+                                                </div>
+                                                <div className="h-px bg-gray-100 dark:bg-zinc-800 my-1" />
+                                                <MenuItem onClick={() => setIsEditing(true)}><div className="flex items-center gap-2"><Edit2 size={14} /> Edit</div></MenuItem>
+                                                <MenuItem onClick={() => onClone(task.id)}><div className="flex items-center gap-2"><Copy size={14} /> Duplicate</div></MenuItem>
+                                                <div className="h-px bg-gray-100 dark:bg-zinc-800 my-1" />
+                                                <div className="px-2 py-1 text-[10px] text-gray-400 uppercase">Move To</div>
+                                                <MenuItem onClick={() => onMoveToColumn(task.id, 'backlog')}>Backlog</MenuItem>
+                                                <MenuItem onClick={() => onMoveToColumn(task.id, 'todo')}>To Do</MenuItem>
+                                                <MenuItem onClick={() => onMoveToColumn(task.id, 'in-progress')}>In Progress</MenuItem>
+                                                <MenuItem onClick={() => onMoveToColumn(task.id, 'done')}>Done</MenuItem>
+                                                <div className="h-px bg-gray-100 dark:bg-zinc-800 my-1" />
+                                                <MenuItem onClick={() => onDelete(task.id)} className="text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20">
+                                                    <div className="flex items-center gap-2"><Trash size={14} /> Delete</div>
+                                                </MenuItem>
+                                            </Menu>
+                                        </div>
 
                                         <button 
                                             onClick={(e) => {
