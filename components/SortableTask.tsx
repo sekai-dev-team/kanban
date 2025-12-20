@@ -135,7 +135,13 @@ export const SortableTask: React.FC<Props> = ({
     }
 
     return (
-        <div ref={setNodeRef} style={style} className={`touch-manipulation relative select-none ${isHighlighted ? 'z-30' : ''}`}>
+        <div 
+            ref={setNodeRef} 
+            style={style} 
+            className={`touch-manipulation relative select-none ${isHighlighted ? 'z-30' : ''}`}
+            {...attributes} 
+            {...(isEditing ? {} : listeners)}
+        >
             
             {/* Visual Feedback for Auto Grouping (Overlay Only) */}
             {isOverlay && autoGroupState && (
@@ -225,7 +231,7 @@ export const SortableTask: React.FC<Props> = ({
                                 {task.isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                             </button>
 
-                            <div className="flex-1 min-w-0" {...attributes} {...(isEditing ? {} : listeners)}>
+                            <div className="flex-1 min-w-0">
                                 {isEditing ? (
                                     <textarea
                                         ref={editInputRef}

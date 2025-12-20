@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   Layout, Folder, Trash, Plus, Database, Moon, Sun, Search 
 } from 'lucide-react';
@@ -21,6 +21,7 @@ interface SidebarProps {
     toggleTheme: () => void;
     // 新增：回到首页的回调
     onGoHome: () => void;
+    updateProjectName: (projectId: string, name: string) => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -36,12 +37,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
     setIsYamlModalOpen,
     setYamlContent,
     toggleTheme,
-    onGoHome // 解构新增属性
+    onGoHome, // 解构新增属性
+    updateProjectName
 }) => {
     const activeProject = data.projects.find(p => p.id === data.activeProjectId);
     const filteredProjects = (data.projects || []).filter(p =>
         p.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
+
+    const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
+    const [tempName, setTempName] = useState('');
+
+    const startEditing = (e: React.MouseEvent, projectId: string, currentName: string) => {
+        e.stopPropagation();
+        setEditingProjectId(projectId);
+        setTempName(currentName);
+    };
+
+    const handleEditSubmit = (projectId: string) => {
+        if (tempName.trim()) {
+            updateProjectName(projectId, tempName.trim());
+        }
+        setEditingProjectId(null);
+    };
 
     return (
         <aside className={`w-64 bg-white dark:bg-zinc-900 border-r border-gray-200 dark:border-zinc-800 flex flex-col z-20 shadow-sm transition-all duration-300 ${isSearchOpen ? 'w-72' : ''}`}>
@@ -94,19 +112,42 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-zinc-800/50 hover:text-gray-900 dark:hover:text-gray-200'
                             }`}
                     >
-                        <div className="flex items-center gap-2 truncate">
-                            {/* 这里的文件夹图标也可以根据 project.status 变色，如果你想的话 */}
+                        <div className="flex items-center gap-2 truncate flex-1 min-w-0">
                             <Folder size={16} className={`shrink-0 ${activeProject?.id === project.id ? 'fill-current opacity-20' : ''}`} />
-                            <span className="truncate" title={project.name}>{project.name}</span>
+                            {editingProjectId === project.id ? (
+                                <input
+                                    autoFocus
+                                    className="bg-transparent border-b border-indigo-500 outline-none w-full text-sm py-0 min-w-0"
+                                    value={tempName}
+                                    onChange={(e) => setTempName(e.target.value)}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onBlur={() => handleEditSubmit(project.id)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') handleEditSubmit(project.id);
+                                        if (e.key === 'Escape') setEditingProjectId(null);
+                                    }}
+                                />
+                            ) : (
+                                <span 
+                                    className="truncate hover:bg-gray-200/50 dark:hover:bg-zinc-700/50 px-1 -mx-1 rounded cursor-text" 
+                                    title="Double click to rename"
+                                    onClick={(e) => e.stopPropagation()} // 防止单击跳转
+                                    onDoubleClick={(e) => startEditing(e, project.id, project.name)}
+                                >
+                                    {project.name}
+                                </span>
+                            )}
                         </div>
                         {/* 删除按钮逻辑保持不变 */}
-                        <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); setProjectToDelete(project.id); }}
-                            className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-red-100 dark:hover:bg-red-900/30 text-red-500 rounded transition-all focus:opacity-100 focus:outline-none"
-                        >
-                            <Trash size={12} className="pointer-events-none" />
-                        </button>
+                        {editingProjectId !== project.id && (
+                            <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); setProjectToDelete(project.id); }}
+                                className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-red-100 dark:hover:bg-red-900/30 text-red-500 rounded transition-all focus:opacity-100 focus:outline-none ml-2"
+                            >
+                                <Trash size={12} className="pointer-events-none" />
+                            </button>
+                        )}
                     </div>
                 ))}
                 

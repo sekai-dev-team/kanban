@@ -12,6 +12,7 @@ interface MainHeaderProps {
     saveStatus: 'idle' | 'saving' | 'saved' | 'error';
     expandParents: (projectId: string, taskId: string) => void;
     setHighlightedTaskId: (id: string | null) => void;
+    updateProjectName: (projectId: string, name: string) => void;
 }
 
 export const MainHeader: React.FC<MainHeaderProps> = ({
@@ -22,9 +23,12 @@ export const MainHeader: React.FC<MainHeaderProps> = ({
     setIsAiOpen,
     saveStatus,
     expandParents,
-    setHighlightedTaskId
+    setHighlightedTaskId,
+    updateProjectName
 }) => {
     const [searchQuery, setSearchQuery] = useState('');
+    const [isEditingName, setIsEditingName] = useState(false);
+    const [tempName, setTempName] = useState('');
 
     if (!activeProject) return null;
 
@@ -62,14 +66,45 @@ export const MainHeader: React.FC<MainHeaderProps> = ({
         }
     };
 
+    const startEditing = () => {
+        setTempName(activeProject.name);
+        setIsEditingName(true);
+    };
+
+    const submitNameEdit = () => {
+        if (tempName.trim()) {
+            updateProjectName(activeProject.id, tempName.trim());
+        }
+        setIsEditingName(false);
+    };
+
     return (
         <header className="h-auto min-h-[4rem] border-b border-gray-200 dark:border-zinc-800 flex flex-col justify-center px-8 bg-white/50 dark:bg-zinc-950/50 backdrop-blur-md z-10 py-3">
             <div className="flex items-start justify-between">
                 <div className="flex-1 mr-8">
                     <div className="flex items-center gap-4 mb-1">
-                        <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-                            {activeProject.name}
-                        </h2>
+                        {isEditingName ? (
+                            <input
+                                autoFocus
+                                className="text-xl font-semibold text-gray-900 dark:text-white bg-transparent border-b-2 border-indigo-500 focus:outline-none w-auto min-w-[200px]"
+                                value={tempName}
+                                onChange={(e) => setTempName(e.target.value)}
+                                onBlur={submitNameEdit}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') submitNameEdit();
+                                    if (e.key === 'Escape') setIsEditingName(false);
+                                }}
+                            />
+                        ) : (
+                            <h2 
+                                className="text-xl font-semibold text-gray-900 dark:text-white hover:bg-gray-100/50 dark:hover:bg-zinc-800/50 px-1 -mx-1 rounded cursor-text transition-colors"
+                                onDoubleClick={startEditing}
+                                title="Double click to rename"
+                            >
+                                {activeProject.name}
+                            </h2>
+                        )}
+                        
                         <span className="px-2.5 py-0.5 rounded-full bg-gray-100 dark:bg-zinc-800 text-xs text-gray-500 dark:text-zinc-400 font-mono">
                             {taskCount} Top-level Tasks
                         </span>

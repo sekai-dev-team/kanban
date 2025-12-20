@@ -204,6 +204,13 @@ export const useAppData = () => {
         }));
     }, []);
 
+    const updateProjectName = useCallback((projectId: string, name: string) => {
+        setData(prev => ({
+            ...prev,
+            projects: prev.projects.map(p => p.id === projectId ? { ...p, name } : p)
+        }));
+    }, []);
+
     const updateWipLimit = useCallback((projectId: string, limit: number) => {
         setData(prev => ({
             ...prev,
@@ -524,6 +531,7 @@ export const useAppData = () => {
         addProject,
         updateProjectStatus,
         updateProjectDescription,
+        updateProjectName, // Added
         updateWipLimit,
         updateProjectColumns, // Added this
         deleteProject,

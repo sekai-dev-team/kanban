@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Clock, ArrowRight } from 'lucide-react';
@@ -7,6 +7,7 @@ import { Project, ProjectStatus, Task } from '../../types';
 interface ProjectCardProps {
     project: Project;
     onClick: (projectId: string) => void;
+    onUpdateName: (projectId: string, name: string) => void;
 }
 
 const formatTime = (timestamp: number) => {
@@ -49,7 +50,7 @@ const countLeaves = (tasks: Task[]): number => {
     return count;
 };
 
-export const ProjectCard: React.FC<ProjectCardProps> = ({ project, onClick }) => {
+export const ProjectCard: React.FC<ProjectCardProps> = ({ project, onClick, onUpdateName }) => {
     const {
         attributes,
         listeners,
@@ -62,6 +63,9 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({ project, onClick }) =>
         data: { type: 'Project', project }
     });
 
+    const [isEditing, setIsEditing] = useState(false);
+    const [tempName, setTempName] = useState(project.name);
+
     const style = {
         transform: CSS.Translate.toString(transform),
         transition,
@@ -71,6 +75,19 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({ project, onClick }) =>
     const totalCount = countLeaves(allTasks);
     const doneCount = countLeaves(project.columns['done']);
     const progress = totalCount === 0 ? 0 : Math.round((doneCount / totalCount) * 100);
+
+    const handleEditStart = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        setTempName(project.name);
+        setIsEditing(true);
+    };
+
+    const handleEditSubmit = () => {
+        if (tempName.trim()) {
+            onUpdateName(project.id, tempName.trim());
+        }
+        setIsEditing(false);
+    };
 
     if (isDragging) {
         return (
@@ -96,9 +113,29 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({ project, onClick }) =>
                 <div className="flex justify-between items-start mb-2">
                     {/* 标题区域：右侧留出 padding 防止撞到图标 */}
                     <div className="pr-8 flex-1">
-                        <h3 className="font-bold text-gray-900 dark:text-gray-100 text-lg tracking-tight group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors truncate">
-                            {project.name}
-                        </h3>
+                        {isEditing ? (
+                            <input
+                                autoFocus
+                                className="font-bold text-gray-900 dark:text-gray-100 text-lg tracking-tight bg-transparent border-b-2 border-blue-500 focus:outline-none w-full"
+                                value={tempName}
+                                onChange={(e) => setTempName(e.target.value)}
+                                onClick={(e) => e.stopPropagation()}
+                                onBlur={handleEditSubmit}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') handleEditSubmit();
+                                    if (e.key === 'Escape') setIsEditing(false);
+                                }}
+                            />
+                        ) : (
+                            <h3 
+                                className="font-bold text-gray-900 dark:text-gray-100 text-lg tracking-tight transition-colors truncate hover:bg-gray-100/50 dark:hover:bg-zinc-800/50 rounded px-1 -mx-1 cursor-text"
+                                onDoubleClick={handleEditStart}
+                                onClick={(e) => e.stopPropagation()}
+                                title="Double click to rename"
+                            >
+                                {project.name}
+                            </h3>
+                        )}
                         <p className="text-sm text-gray-500 dark:text-gray-400 line-clamp-1 mt-1 min-h-[1.25em]">
                             {project.description || 'No description provided.'}
                         </p>

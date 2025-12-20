@@ -27,6 +27,7 @@ export default function App() {
         saveStatus,
         addProject,
         updateProjectDescription,
+        updateProjectName,
         updateWipLimit,
         updateProjectColumns,
         updateProjectStatus, // 确保这个从 useAppData 导出了
@@ -110,6 +111,7 @@ export default function App() {
                 setYamlContent={setYamlContent}
                 toggleTheme={toggleTheme}
                 onGoHome={handleGoHome} // 传入回到首页函数
+                updateProjectName={updateProjectName}
             />
 
             {/* Main Area: 根据 view 状态切换显示内容 */}
@@ -123,6 +125,7 @@ export default function App() {
                         onUpdateProjectStatus={updateProjectStatus}
                         onMoveProject={moveProject} // 2. 传入排序方法
                         onNewProject={() => setIsProjectModalOpen(true)}
+                        onUpdateProjectName={updateProjectName}
                     />
                 ) : activeProject ? (
                     // --- 视图 B: 项目看板 ---
@@ -136,6 +139,7 @@ export default function App() {
                             saveStatus={saveStatus}
                             expandParents={expandParents}
                             setHighlightedTaskId={setHighlightedTaskId}
+                            updateProjectName={updateProjectName}
                         />
 
                         <Board 

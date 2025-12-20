@@ -22,6 +22,7 @@ interface DashboardProps {
     onUpdateProjectStatus: (projectId: string, status: ProjectStatus) => void;
     onMoveProject: (activeId: string, overId: string) => void;
     onNewProject: () => void;
+    onUpdateProjectName: (projectId: string, name: string) => void;
 }
 
 const COLUMNS: { id: ProjectStatus; label: string }[] = [
@@ -30,11 +31,12 @@ const COLUMNS: { id: ProjectStatus; label: string }[] = [
     { id: 'completed', label: 'Completed' }
 ];
 
-const DashboardColumn = ({ id, label, projects, onProjectClick }: { 
+const DashboardColumn = ({ id, label, projects, onProjectClick, onUpdateProjectName }: { 
     id: ProjectStatus, 
     label: string, 
     projects: Project[],
-    onProjectClick: (id: string) => void
+    onProjectClick: (id: string) => void,
+    onUpdateProjectName: (projectId: string, name: string) => void
 }) => {
     const { setNodeRef } = useDroppable({ id });
 
@@ -61,7 +63,8 @@ const DashboardColumn = ({ id, label, projects, onProjectClick }: {
                             <ProjectCard 
                                 key={project.id} 
                                 project={project} 
-                                onClick={onProjectClick} 
+                                onClick={onProjectClick}
+                                onUpdateName={onUpdateProjectName}
                             />
                         ))}
                         {projects.length === 0 && (
@@ -81,7 +84,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
     onProjectClick, 
     onUpdateProjectStatus,
     onMoveProject,
-    onNewProject
+    onNewProject,
+    onUpdateProjectName
 }) => {
     const [activeId, setActiveId] = React.useState<string | null>(null);
 
@@ -169,6 +173,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                 label={col.label}
                                 projects={projectsByStatus[col.id]}
                                 onProjectClick={onProjectClick}
+                                onUpdateProjectName={onUpdateProjectName}
                             />
                         ))}
                     </div>
@@ -179,7 +184,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                             <div className="opacity-90 rotate-2 cursor-grabbing w-[340px]">
                                 <ProjectCard 
                                     project={activeProject} 
-                                    onClick={() => {}} 
+                                    onClick={() => {}}
+                                    onUpdateName={() => {}} // Overlay不需要真正的更新
                                 />
                             </div>
                         ) : null}
