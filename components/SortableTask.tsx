@@ -135,12 +135,19 @@ export const SortableTask: React.FC<Props> = ({
                     <div className={`px-3 py-1.5 rounded-full text-xs font-bold shadow-lg flex items-center gap-1.5 ${
                         autoGroupState.type === 'group-existing' 
                             ? 'bg-blue-500 text-white' 
-                            : 'bg-indigo-500 text-white'
+                            : autoGroupState.type === 'duplicate'
+                                ? 'bg-purple-500 text-white'
+                                : 'bg-indigo-500 text-white'
                     }`}>
                         {autoGroupState.type === 'group-existing' ? (
                             <>
                                 <Link size={12} className="stroke-[3]" />
                                 <span>Linking to Parent</span>
+                            </>
+                        ) : autoGroupState.type === 'duplicate' ? (
+                            <>
+                                <Copy size={12} className="stroke-[3]" />
+                                <span>Duplicating Task</span>
                             </>
                         ) : (
                             <>
@@ -198,7 +205,7 @@ export const SortableTask: React.FC<Props> = ({
                                     e.stopPropagation();
                                     onUpdate(task.id, { isExpanded: !task.isExpanded });
                                 }}
-                                className={`mt-[3px] text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors relative z-20 ${totalSubtasks === 0 ? 'opacity-30 hover:opacity-100' : ''}`}
+                                className={`mt-[3px] text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors relative z-20 ${totalSubtasks === 0 ? 'invisible pointer-events-none' : ''}`}
                             >
                                 {task.isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                             </button>

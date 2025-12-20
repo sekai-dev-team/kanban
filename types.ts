@@ -71,4 +71,6 @@ export type AutoGroupState = {
 } | {
     type: 'create-parent';
     // parentContent: string; // 暂时不需要 content，UI 自己知道
+} | {
+    type: 'duplicate';
 } | null;

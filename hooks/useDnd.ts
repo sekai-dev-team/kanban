@@ -119,6 +119,12 @@ export const useDnd = ({ activeProject, updateProjectColumns }: UseDndProps) => 
             }
         });
 
+        // Check for Duplication (Top Level + Ctrl)
+        if (!originalParent) {
+             setAutoGroupState({ type: 'duplicate' });
+             return;
+        }
+
         // Find target column based on dragState.targetId
         let targetColumnId: string | undefined;
         // Case 1: Target is Column
@@ -250,8 +256,8 @@ export const useDnd = ({ activeProject, updateProjectColumns }: UseDndProps) => 
     
         if (!over) return;
     
-        // Ctrl key now means "Preserve Context" (Keep Parent), not "Clone"
-        const isPreserveContext = (event.activatorEvent as any)?.ctrlKey;
+        // Ctrl key logic
+        const ctrlKey = (event.activatorEvent as any)?.ctrlKey || isCtrlPressed;
         
         const newCols = JSON.parse(JSON.stringify(activeProject.columns)); 
 
@@ -265,24 +271,41 @@ export const useDnd = ({ activeProject, updateProjectColumns }: UseDndProps) => 
             }
         });
 
-        // A. 准备待移动任务 (Always Move, never Clone)
+        const isTopLevel = !originalParent;
+        // Duplicate if Ctrl is pressed AND it's a top-level task
+        const isDuplicateOperation = ctrlKey && isTopLevel;
+
+        // A. 准备待移动任务 (Move or Clone)
         let taskToMove: Task | null = null;
         
-        const removeFromTree = (tasks: Task[]): Task[] => {
-            const res: Task[] = [];
-            for (const t of tasks) {
-                if (t.id === active.id) {
-                taskToMove = t; 
-                } else {
-                t.children = removeFromTree(t.children);
-                res.push(t);
+        if (isDuplicateOperation) {
+             const sourceTask = findTask(allTasks, active.id as string);
+             if (sourceTask) {
+                 taskToMove = {
+                     ...sourceTask,
+                     id: nanoid(),
+                     children: [], // 复制时不携带子卡片
+                     // sourceId 保持不变 (if existing)
+                 };
+             }
+             // Do NOT remove original from newCols
+        } else {
+            const removeFromTree = (tasks: Task[]): Task[] => {
+                const res: Task[] = [];
+                for (const t of tasks) {
+                    if (t.id === active.id) {
+                    taskToMove = t; 
+                    } else {
+                    t.children = removeFromTree(t.children);
+                    res.push(t);
+                    }
                 }
-            }
-            return res;
-        };
-        (Object.keys(newCols) as ColumnId[]).forEach(k => {
-            newCols[k] = removeFromTree(newCols[k]);
-        });
+                return res;
+            };
+            (Object.keys(newCols) as ColumnId[]).forEach(k => {
+                newCols[k] = removeFromTree(newCols[k]);
+            });
+        }
 
         if (!taskToMove) return; 
 
@@ -293,10 +316,11 @@ export const useDnd = ({ activeProject, updateProjectColumns }: UseDndProps) => 
             // 情况1: 目标是 Column (即拖到了列的根部/空白处)
             if (Object.keys(newCols).includes(targetId)) {
                 
-                // --- Logic: Auto-Grouping ONLY if Ctrl is pressed ---
+                // --- Logic: Auto-Grouping ONLY if Ctrl is pressed (Preserve Context) ---
                 const isCrossColumn = sourceColumnId && sourceColumnId !== targetId;
                 
-                if (isPreserveContext && originalParent && isCrossColumn) {
+                // Note: isDuplicateOperation implies !originalParent, so this block is naturally skipped for duplicates
+                if (ctrlKey && originalParent && isCrossColumn) {
                     const targetColumnTasks = newCols[targetId as ColumnId];
                     const identityId = originalParent.sourceId || originalParent.id;
                     const matchingParent = findMatchingParent(targetColumnTasks, identityId);
@@ -359,7 +383,7 @@ export const useDnd = ({ activeProject, updateProjectColumns }: UseDndProps) => 
                            // Check for Preserve Context Logic
                            const isCrossColumn = sourceColumnId && sourceColumnId !== colId;
                            
-                           if (type === 'insert' && isPreserveContext && originalParent && isCrossColumn) {
+                           if (type === 'insert' && ctrlKey && originalParent && isCrossColumn) {
                                const targetColumnTasks = newCols[colId as ColumnId];
                                const identityId = originalParent.sourceId || originalParent.id;
                                const matchingParent = findMatchingParent(targetColumnTasks, identityId);
@@ -406,9 +430,11 @@ export const useDnd = ({ activeProject, updateProjectColumns }: UseDndProps) => 
             }
         } else {
             // Fallback (e.g. dropped on background)
-            if (!isClone) {
-                 newCols['backlog'].push(taskToMove);
-            }
+            // If it was a duplicate op, we might not want to create a random copy in backlog if drop failed?
+            // But standard behavior is to fallback to backlog.
+            // However, "isClone" in the original code referred to useDnd props (not visible here). 
+            // Assuming fallback to backlog is fine for now.
+             newCols['backlog'].push(taskToMove);
         }
 
         updateProjectColumns(activeProject.id, newCols);
