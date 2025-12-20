@@ -391,29 +391,32 @@ export const useAppData = () => {
     }, []);
 
     const cloneTask = useCallback((projectId: string, taskId: string) => {
-         const deepClone = (t: Task): Task => ({
-            ...t, 
-            id: nanoid(), 
-            content: `${t.content} (Copy)`, 
-            children: t.children.map(deepClone)
-         });
-    
          setData(prev => {
              const projs = prev.projects.map(p => {
                  if (p.id !== projectId) return p;
                  const newCols = { ...p.columns };
-                 let foundClone: Task | undefined;
+                 
+                 let originalTask: Task | undefined;
+                 let targetColumn: ColumnId | undefined;
+
+                 // Find original task and its column
                  (Object.keys(newCols) as ColumnId[]).forEach(k => {
                      const t = findTask(newCols[k], taskId);
-                     if(t) foundClone = deepClone(t);
+                     if (t) {
+                         originalTask = t;
+                         targetColumn = k;
+                     }
                  });
     
-                 if(foundClone) {
-                     (Object.keys(newCols) as ColumnId[]).forEach(k => {
-                         if(findTask(newCols[k], taskId)) {
-                             newCols[k] = [...newCols[k], foundClone!];
-                         }
-                     });
+                 if (originalTask && targetColumn) {
+                     const clone: Task = {
+                         ...originalTask,
+                         id: nanoid(),
+                         children: [], // shallow copy, no children
+                         sourceId: originalTask.sourceId || originalTask.id, // Link identity
+                         // content remains same
+                     };
+                     newCols[targetColumn] = [...newCols[targetColumn], clone];
                  }
                  return { ...p, updatedAt: Date.now(), columns: newCols };
              });
