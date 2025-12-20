@@ -140,12 +140,9 @@ export const useDnd = ({ activeProject, updateProjectColumns }: UseDndProps) => 
         }
 
         if (originalParent && sourceColumnId && targetColumnId && sourceColumnId !== targetColumnId) {
-            // Check if we are "nesting". If nesting, we DON'T do auto-group (as per our decision)
-            if (dragState.type === 'nest') {
-                setAutoGroupState(null);
-                return;
-            }
-
+            // **New Logic**: Even if nesting, enable Auto-Group if Ctrl is pressed
+            // Previously: if (dragState.type === 'nest') return;
+            
             const targetColumnTasks = activeProject.columns[targetColumnId as ColumnId];
             const identityId = originalParent.sourceId || originalParent.id;
             const matchingParent = findMatchingParent(targetColumnTasks, identityId);
@@ -340,11 +337,9 @@ export const useDnd = ({ activeProject, updateProjectColumns }: UseDndProps) => 
                             children: [taskToMove],
                         };
                         
-                        if (position === 'top') {
-                            newCols[targetId].unshift(parentCopy);
-                        } else {
-                            newCols[targetId].push(parentCopy);
-                        }
+                        // Insert at bottom when no parent found (user requirement)
+                        newCols[targetId].push(parentCopy);
+                        
                         updateProjectColumns(activeProject.id, newCols);
                         return;
                     }
@@ -369,7 +364,7 @@ export const useDnd = ({ activeProject, updateProjectColumns }: UseDndProps) => 
             }
 
             // 情况2: 目标是 Task (Nest / Insert)
-            // Revised iteration to handle Context Preserve on Insert
+            // Revised iteration to handle Context Preserve on Insert AND Nest
             let handled = false;
             (Object.keys(newCols) as ColumnId[]).forEach(k => {
                 if (handled) return;
@@ -383,26 +378,29 @@ export const useDnd = ({ activeProject, updateProjectColumns }: UseDndProps) => 
                            // Check for Preserve Context Logic
                            const isCrossColumn = sourceColumnId && sourceColumnId !== colId;
                            
-                           if (type === 'insert' && ctrlKey && originalParent && isCrossColumn) {
+                           // Logic applies to BOTH 'insert' and 'nest' modes if Ctrl + Cross-Column + Has Parent
+                           if (ctrlKey && originalParent && isCrossColumn) {
                                const targetColumnTasks = newCols[colId as ColumnId];
                                const identityId = originalParent.sourceId || originalParent.id;
                                const matchingParent = findMatchingParent(targetColumnTasks, identityId);
                                
                                if (matchingParent) {
-                                   // Case A: Parent Exists -> Group into it (Ignore specific insert position)
+                                   // Case A: Parent Exists -> Group into it (Ignore specific insert position/target)
                                    matchingParent.children.push(taskToMove!);
                                    matchingParent.isExpanded = true;
                                    return true;
                                } else {
-                                   // Case B: Parent Doesn't Exist -> Create Copy -> Insert at THIS specific position
+                                   // Case B: Parent Doesn't Exist -> Create Copy -> Insert at Column BOTTOM
                                    const parentCopy: Task = {
                                        ...originalParent,
                                        id: nanoid(), 
                                        sourceId: identityId, 
                                        children: [taskToMove!],
                                    };
-                                   const index = position === 'top' ? i : i + 1;
-                                   tasks.splice(index, 0, parentCopy);
+                                   
+                                   // User Requirement: "If no parent then copy parent at outermost bottom of column"
+                                   // Push to root column array
+                                   newCols[colId as ColumnId].push(parentCopy);
                                    return true;
                                }
                            }
@@ -429,11 +427,7 @@ export const useDnd = ({ activeProject, updateProjectColumns }: UseDndProps) => 
                 newCols['backlog'].push(taskToMove); 
             }
         } else {
-            // Fallback (e.g. dropped on background)
-            // If it was a duplicate op, we might not want to create a random copy in backlog if drop failed?
-            // But standard behavior is to fallback to backlog.
-            // However, "isClone" in the original code referred to useDnd props (not visible here). 
-            // Assuming fallback to backlog is fine for now.
+            // Fallback
              newCols['backlog'].push(taskToMove);
         }
 
