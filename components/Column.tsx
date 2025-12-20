@@ -18,7 +18,7 @@ interface Props {
     onClone: (taskId: string) => void;
     wipLimit?: number;
     onUpdateWipLimit?: (limit: number) => void;
-    currentWipCount?: number;
+    leafCount: number;
     dragState: DragState | null;
     getProgress: (taskId: string) => { completed: number; total: number };
     highlightedTaskId?: string | null;
@@ -36,7 +36,7 @@ export const Column: React.FC<Props> = ({
     onClone,
     wipLimit,
     onUpdateWipLimit,
-    currentWipCount = 0,
+    leafCount,
     dragState,
     getProgress,
     highlightedTaskId
@@ -71,7 +71,7 @@ export const Column: React.FC<Props> = ({
         setIsEditingWip(false);
     };
 
-    const isOverLimit = wipLimit ? currentWipCount > wipLimit : false;
+    const isOverLimit = wipLimit ? leafCount > wipLimit : false;
 
     // Visual Indicators for Column Level Insert
     const showTopLine = dragState?.targetId === id && dragState?.type === 'insert' && dragState?.position === 'top';
@@ -115,12 +115,12 @@ export const Column: React.FC<Props> = ({
                                     : 'bg-gray-100 border-gray-200 text-gray-500 dark:bg-zinc-800 dark:border-zinc-700'
                                     }`}
                             >
-                                {currentWipCount} / {wipLimit}
+                                {leafCount} / {wipLimit}
                             </span>
                         )
                     ) : (
                         <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500 dark:bg-zinc-800 dark:text-zinc-400">
-                            {tasks.length}
+                            {leafCount}
                         </span>
                     )}
                 </div>

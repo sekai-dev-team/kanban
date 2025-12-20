@@ -47,10 +47,6 @@ export const Board: React.FC<BoardProps> = ({
         onDragEnd
     } = useDnd({ activeProject, updateProjectColumns });
 
-    const wipCount = useMemo(() =>
-        countLeaves(activeProject.columns['in-progress'])
-        , [activeProject, countLeaves]);
-
     // Progress Calculation Logic
     const progressMap = useMemo(() => {
         const map = new Map<string, { completed: number; total: number }>();
@@ -138,7 +134,7 @@ export const Board: React.FC<BoardProps> = ({
                             onClone={(taskId) => cloneTask(activeProject.id, taskId)}
                             wipLimit={col.id === 'in-progress' ? activeProject.wipLimit : undefined}
                             onUpdateWipLimit={(limit) => updateWipLimit(activeProject.id, limit)}
-                            currentWipCount={col.id === 'in-progress' ? wipCount : undefined}
+                            leafCount={countLeaves(activeProject.columns[col.id])}
                             dragState={dragState}
                             getProgress={getProgress}
                             highlightedTaskId={highlightedTaskId}
