@@ -20,6 +20,7 @@ interface Props {
     dragState: DragState | null;
     isOverlay?: boolean;
     autoGroupState?: AutoGroupState; // New Prop
+    getProgress?: (taskId: string) => { completed: number; total: number };
 }
 
 const getRelativeTime = (timestamp: number) => {
@@ -54,7 +55,8 @@ export const SortableTask: React.FC<Props> = ({
     onClone,
     dragState,
     isOverlay = false,
-    autoGroupState
+    autoGroupState,
+    getProgress
 }) => {
     const {
         attributes,
@@ -104,8 +106,7 @@ export const SortableTask: React.FC<Props> = ({
         }
     };
 
-    const totalSubtasks = task.children.length;
-    const completedSubtasks = task.children.filter(t => t.completed).length;
+    const { completed: completedSubtasks, total: totalSubtasks } = getProgress ? getProgress(task.id) : { completed: 0, total: 0};
     const progressPercent = totalSubtasks === 0 ? 0 : Math.round((completedSubtasks / totalSubtasks) * 100);
     const showProgress = totalSubtasks > 0;
 
@@ -210,17 +211,6 @@ export const SortableTask: React.FC<Props> = ({
                                 {task.isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                             </button>
 
-                            {depth > 0 && (
-                                <div className="mt-[3px] relative z-20" onPointerDown={e => e.stopPropagation()}>
-                                    <input
-                                        type="checkbox"
-                                        checked={!!task.completed}
-                                        onChange={() => onUpdate(task.id, { completed: !task.completed })}
-                                        className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600 block"
-                                    />
-                                </div>
-                            )}
-
                             <div className="flex-1 min-w-0" {...attributes} {...(isEditing ? {} : listeners)}>
                                 {isEditing ? (
                                     <textarea
@@ -240,7 +230,7 @@ export const SortableTask: React.FC<Props> = ({
                                 ) : (
                                     <div
                                         onDoubleClick={() => setIsEditing(true)}
-                                        className={`text-sm leading-5 text-gray-700 dark:text-gray-200 break-words ${task.completed ? 'line-through text-gray-400' : ''}`}
+                                        className="text-sm leading-5 text-gray-700 dark:text-gray-200 break-words"
                                     >
                                         {task.content}
                                     </div>
@@ -339,6 +329,7 @@ export const SortableTask: React.FC<Props> = ({
                                 onMoveToColumn={onMoveToColumn}
                                 onClone={onClone}
                                 dragState={dragState}
+                                getProgress={getProgress}
                             />
                         ))}
                     </SortableContext>

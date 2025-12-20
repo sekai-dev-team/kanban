@@ -1,8 +1,8 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import {
     DndContext,
     DragOverlay,
-    pointerWithin // Changed: Use pointerWithin for strict cursor based detection
+    pointerWithin
 } from '@dnd-kit/core';
 import { Project, Task, COLUMNS, ColumnId } from '../../types';
 import { Column } from '../Column';
@@ -11,7 +11,7 @@ import { useDnd, dropAnimation } from '../../hooks/useDnd';
 
 interface BoardProps {
     activeProject: Project;
-    updateProjectColumns: (projectId: string, newColumns: Record<ColumnId, Task[]>) => void; // 用于 useDnd
+    updateProjectColumns: (projectId: string, newColumns: Record<ColumnId, Task[]>) => void;
     // Actions for Tasks
     addTask: (projectId: string, columnId: ColumnId, content: string) => void;
     updateTask: (projectId: string, taskId: string, updates: Partial<Task>) => void;
@@ -35,18 +35,10 @@ export const Board: React.FC<BoardProps> = ({
     updateWipLimit,
     countLeaves
 }) => {
-    // Initialize DnD Hook
-    // 注意：updateProjectColumns 已经在 useDnd 内部调用了，但这里我们传入的是一个能够更新全局 AppData 的函数
-    // 我们的 hooks/useAppData 并没有直接暴露 updateProjectColumns，而是有一系列特定的 updateTask 等。
-    // 但是 useDnd 的逻辑是重新计算整个 columns 对象并一次性更新。
-    // 因此，我们需要在 App (或这里) 适配一下。
-    // 最简单的方法是让 useAppData 暴露一个 updateProjectColumns 方法，或者我们在 App.tsx 里构造它。
-    // 既然 useDnd 已经在 hook 里了，我们就直接使用它。
-
     const {
         activeTask,
         dragState,
-        autoGroupState, // Exposed from hook
+        autoGroupState,
         sensors,
         onDragStart,
         onDragOver,
@@ -56,6 +48,69 @@ export const Board: React.FC<BoardProps> = ({
     const wipCount = useMemo(() =>
         countLeaves(activeProject.columns['in-progress'])
         , [activeProject, countLeaves]);
+
+    // Progress Calculation Logic
+    const progressMap = useMemo(() => {
+        const map = new Map<string, { completed: number; total: number }>();
+        
+        // 1. Build Done Set (IDs in Done Column)
+        const doneSet = new Set<string>();
+        const traverseDone = (tasks: Task[]) => {
+            tasks.forEach(t => {
+                doneSet.add(t.id);
+                if(t.sourceId) doneSet.add(t.sourceId);
+                traverseDone(t.children);
+            });
+        };
+        traverseDone(activeProject.columns['done']);
+
+        // 2. Group all tasks by Identity to find "Homologous Parents"
+        const parentsByIdentity = new Map<string, Task[]>();
+        const allTasks: Task[] = [];
+        
+        const traverseAll = (tasks: Task[]) => {
+            tasks.forEach(t => {
+                allTasks.push(t);
+                const identity = t.sourceId || t.id;
+                if (!parentsByIdentity.has(identity)) {
+                    parentsByIdentity.set(identity, []);
+                }
+                parentsByIdentity.get(identity)!.push(t);
+                traverseAll(t.children);
+            });
+        };
+        Object.values(activeProject.columns).forEach(col => traverseAll(col));
+
+        // 3. Calculate progress for each task
+        allTasks.forEach(task => {
+             const identity = task.sourceId || task.id;
+             const siblings = parentsByIdentity.get(identity) || [task];
+             
+             const distinctChildren = new Set<string>(); // Stores child identities
+             
+             siblings.forEach(p => {
+                 p.children.forEach(c => {
+                     distinctChildren.add(c.sourceId || c.id);
+                 });
+             });
+             
+             const total = distinctChildren.size;
+             let completed = 0;
+             distinctChildren.forEach(childIdentity => {
+                 if (doneSet.has(childIdentity)) {
+                     completed++;
+                 }
+             });
+             
+             map.set(task.id, { completed, total });
+        });
+
+        return map;
+    }, [activeProject]);
+
+    const getProgress = useCallback((taskId: string) => {
+        return progressMap.get(taskId) || { completed: 0, total: 0 };
+    }, [progressMap]);
 
     return (
         <div className="flex-1 overflow-x-auto overflow-y-auto p-4">
@@ -83,6 +138,7 @@ export const Board: React.FC<BoardProps> = ({
                             onUpdateWipLimit={(limit) => updateWipLimit(activeProject.id, limit)}
                             currentWipCount={col.id === 'in-progress' ? wipCount : undefined}
                             dragState={dragState}
+                            getProgress={getProgress}
                         />
                     ))}
                 </div>
@@ -98,7 +154,8 @@ export const Board: React.FC<BoardProps> = ({
                                 onClone={() => { }}
                                 dragState={null}
                                 isOverlay={true}
-                                autoGroupState={autoGroupState} // Pass the state
+                                autoGroupState={autoGroupState}
+                                getProgress={getProgress}
                             />
                         </div>
                     ) : null}
