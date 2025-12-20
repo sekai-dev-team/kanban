@@ -21,6 +21,7 @@ interface BoardProps {
     cloneTask: (projectId: string, taskId: string) => void;
     updateWipLimit: (projectId: string, limit: number) => void;
     countLeaves: (tasks: Task[]) => number;
+    highlightedTaskId: string | null;
 }
 
 export const Board: React.FC<BoardProps> = ({
@@ -33,7 +34,8 @@ export const Board: React.FC<BoardProps> = ({
     moveToColumn,
     cloneTask,
     updateWipLimit,
-    countLeaves
+    countLeaves,
+    highlightedTaskId
 }) => {
     const {
         activeTask,
@@ -139,6 +141,7 @@ export const Board: React.FC<BoardProps> = ({
                             currentWipCount={col.id === 'in-progress' ? wipCount : undefined}
                             dragState={dragState}
                             getProgress={getProgress}
+                            highlightedTaskId={highlightedTaskId}
                         />
                     ))}
                 </div>
@@ -156,6 +159,7 @@ export const Board: React.FC<BoardProps> = ({
                                 isOverlay={true}
                                 autoGroupState={autoGroupState}
                                 getProgress={getProgress}
+                                highlightedTaskId={null}
                             />
                         </div>
                     ) : null}

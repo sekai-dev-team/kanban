@@ -9,6 +9,7 @@ export const useUI = () => {
     const [newProjectName, setNewProjectName] = useState('');
     const [yamlContent, setYamlContent] = useState('');
     const [searchQuery, setSearchQuery] = useState('');
+    const [highlightedTaskId, setHighlightedTaskId] = useState<string | null>(null);
 
     const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -34,6 +35,7 @@ export const useUI = () => {
         newProjectName, setNewProjectName,
         yamlContent, setYamlContent,
         searchQuery, setSearchQuery,
+        highlightedTaskId, setHighlightedTaskId,
         searchInputRef
     };
 };

@@ -21,6 +21,7 @@ interface Props {
     currentWipCount?: number;
     dragState: DragState | null;
     getProgress: (taskId: string) => { completed: number; total: number };
+    highlightedTaskId?: string | null;
 }
 
 export const Column: React.FC<Props> = ({
@@ -37,7 +38,8 @@ export const Column: React.FC<Props> = ({
     onUpdateWipLimit,
     currentWipCount = 0,
     dragState,
-    getProgress
+    getProgress,
+    highlightedTaskId
 }) => {
     // Use Droppable for the entire column area
     const { setNodeRef } = useDroppable({
@@ -142,6 +144,7 @@ export const Column: React.FC<Props> = ({
                                 onClone={onClone}
                                 dragState={dragState}
                                 getProgress={getProgress}
+                                highlightedTaskId={highlightedTaskId}
                             />
                         ))}
                         {tasks.length === 0 && (

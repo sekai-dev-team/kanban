@@ -40,7 +40,8 @@ export default function App() {
         cloneTask,
         setActiveProjectId,
         toggleTheme,
-        countLeaves
+        countLeaves,
+        expandParents
     } = useAppData();
 
     // 2. UI State Hook
@@ -53,7 +54,9 @@ export default function App() {
         newProjectName, setNewProjectName,
         yamlContent, setYamlContent,
         searchQuery, setSearchQuery,
-        searchInputRef
+        searchInputRef,
+        highlightedTaskId, 
+        setHighlightedTaskId
     } = useUI();
 
     // 新增：视图状态管理 ('dashboard' | 'board')
@@ -131,6 +134,8 @@ export default function App() {
                             isAiOpen={isAiOpen}
                             setIsAiOpen={setIsAiOpen}
                             saveStatus={saveStatus}
+                            expandParents={expandParents}
+                            setHighlightedTaskId={setHighlightedTaskId}
                         />
 
                         <Board 
@@ -144,6 +149,7 @@ export default function App() {
                             cloneTask={cloneTask}
                             updateWipLimit={updateWipLimit}
                             countLeaves={countLeaves}
+                            highlightedTaskId={highlightedTaskId}
                         />
                     </>
                 ) : (

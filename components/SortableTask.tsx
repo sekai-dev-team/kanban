@@ -21,6 +21,7 @@ interface Props {
     isOverlay?: boolean;
     autoGroupState?: AutoGroupState; // New Prop
     getProgress?: (taskId: string) => { completed: number; total: number };
+    highlightedTaskId?: string | null;
 }
 
 const getRelativeTime = (timestamp: number) => {
@@ -56,7 +57,8 @@ export const SortableTask: React.FC<Props> = ({
     dragState,
     isOverlay = false,
     autoGroupState,
-    getProgress
+    getProgress,
+    highlightedTaskId
 }) => {
     const {
         attributes,
@@ -112,11 +114,16 @@ export const SortableTask: React.FC<Props> = ({
 
     const style = { transition };
     const isTarget = dragState?.targetId === task.id;
+    const isHighlighted = highlightedTaskId === task.id;
 
     const showTopLine = isTarget && dragState?.type === 'insert' && dragState?.position === 'top';
     const showBottomLine = isTarget && dragState?.type === 'insert' && dragState?.position === 'bottom';
     const nestClass = (isTarget && dragState?.type === 'nest')
         ? 'ring-2 ring-blue-500 ring-offset-1 bg-blue-50/50 dark:bg-blue-900/20'
+        : '';
+    
+    const highlightClass = isHighlighted 
+        ? 'ring-2 ring-indigo-500 ring-offset-1 bg-indigo-50/50 dark:bg-indigo-900/20 shadow-lg scale-[1.02] z-30' 
         : '';
 
     if (isDragging) {
@@ -128,7 +135,7 @@ export const SortableTask: React.FC<Props> = ({
     }
 
     return (
-        <div ref={setNodeRef} style={style} className="touch-manipulation relative select-none">
+        <div ref={setNodeRef} style={style} className={`touch-manipulation relative select-none ${isHighlighted ? 'z-30' : ''}`}>
             
             {/* Visual Feedback for Auto Grouping (Overlay Only) */}
             {isOverlay && autoGroupState && (
@@ -170,7 +177,7 @@ export const SortableTask: React.FC<Props> = ({
 
             {showTopLine && <div className="absolute -top-1.5 left-0 right-0 h-1 bg-blue-500 rounded-full z-20" />}
 
-            <div className={`group relative bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-lg shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden flex ${nestClass}`}>
+            <div className={`group relative bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-lg shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden flex ${nestClass} ${highlightClass}`}>
 
                 {/* 底部绝对定位进度条 */}
                 {showProgress && (
@@ -330,6 +337,7 @@ export const SortableTask: React.FC<Props> = ({
                                 onClone={onClone}
                                 dragState={dragState}
                                 getProgress={getProgress}
+                                highlightedTaskId={highlightedTaskId}
                             />
                         ))}
                     </SortableContext>

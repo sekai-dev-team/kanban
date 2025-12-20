@@ -438,6 +438,65 @@ export const useAppData = () => {
     const toggleTheme = useCallback(() => {
         setData(prev => ({ ...prev, theme: prev.theme === 'light' ? 'dark' : 'light' }));
     }, []);
+    
+    const expandParents = useCallback((projectId: string, taskId: string) => {
+        setData(prev => {
+            const project = prev.projects.find(p => p.id === projectId);
+            if (!project) return prev;
+
+            // Helper to find the path (stack of tasks) to the target task
+            const findPath = (tasks: Task[], path: string[] = []): string[] | null => {
+                for (const t of tasks) {
+                    if (t.id === taskId) return path;
+                    if (t.children.length > 0) {
+                        const res = findPath(t.children, [...path, t.id]);
+                        if (res) return res;
+                    }
+                }
+                return null;
+            };
+
+            let pathIds: string[] | null = null;
+            Object.values(project.columns).forEach(colTasks => {
+                if (!pathIds) {
+                    const res = findPath(colTasks);
+                    if (res) pathIds = res;
+                }
+            });
+
+            if (!pathIds || pathIds.length === 0) return prev;
+
+            const idsToExpand = new Set(pathIds);
+
+            const updateRecursive = (tasks: Task[]): Task[] => {
+                return tasks.map(t => {
+                    let newT = t;
+                    if (idsToExpand.has(t.id) && !t.isExpanded) {
+                        newT = { ...t, isExpanded: true };
+                    }
+                    if (t.children.length > 0) {
+                        const newChildren = updateRecursive(t.children);
+                        if (newChildren !== t.children) {
+                            newT = { ...newT, children: newChildren };
+                        }
+                    }
+                    return newT;
+                });
+            };
+
+            return {
+                ...prev,
+                projects: prev.projects.map(p => {
+                    if (p.id !== projectId) return p;
+                    const newCols = { ...p.columns };
+                    (Object.keys(newCols) as ColumnId[]).forEach(k => {
+                        newCols[k] = updateRecursive(newCols[k]);
+                    });
+                    return { ...p, updatedAt: Date.now(), columns: newCols };
+                })
+            };
+        });
+    }, []);
 
 
     // 项目排序方法
@@ -477,6 +536,7 @@ export const useAppData = () => {
         cloneTask,
         setActiveProjectId,
         toggleTheme,
+        expandParents,
         // Helpers exposed if needed
         findTask,
         countLeaves

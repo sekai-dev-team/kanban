@@ -1,6 +1,6 @@
-import React from 'react';
-import { Sparkles, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
-import { Project } from '../../types';
+import React, { useState } from 'react';
+import { Sparkles, CheckCircle2, AlertCircle, Loader2, Search } from 'lucide-react';
+import { Project, Task, ColumnId } from '../../types';
 import { Button } from '../ui';
 
 interface MainHeaderProps {
@@ -10,6 +10,8 @@ interface MainHeaderProps {
     isAiOpen: boolean;
     setIsAiOpen: (isOpen: boolean) => void;
     saveStatus: 'idle' | 'saving' | 'saved' | 'error';
+    expandParents: (projectId: string, taskId: string) => void;
+    setHighlightedTaskId: (id: string | null) => void;
 }
 
 export const MainHeader: React.FC<MainHeaderProps> = ({
@@ -18,9 +20,47 @@ export const MainHeader: React.FC<MainHeaderProps> = ({
     updateProjectDescription,
     isAiOpen,
     setIsAiOpen,
-    saveStatus
+    saveStatus,
+    expandParents,
+    setHighlightedTaskId
 }) => {
+    const [searchQuery, setSearchQuery] = useState('');
+
     if (!activeProject) return null;
+
+    const handleSearch = () => {
+        if (!searchQuery.trim()) {
+            setHighlightedTaskId(null);
+            return;
+        }
+
+        let query = searchQuery.trim();
+        if (query.startsWith('#')) query = query.slice(1);
+
+        // Search Helper
+        const search = (tasks: Task[], predicate: (t: Task) => boolean): Task | undefined => {
+            for (const t of tasks) {
+                if (predicate(t)) return t;
+                if (t.children.length > 0) {
+                    const found = search(t.children, predicate);
+                    if (found) return found;
+                }
+            }
+            return undefined;
+        };
+
+        const allTasks = Object.values(activeProject.columns).flat();
+        
+        // Only Match ID suffix (supports full ID as well since full ID ends with itself)
+        const foundTask = search(allTasks, t => t.id.endsWith(query));
+
+        if (foundTask) {
+            expandParents(activeProject.id, foundTask.id);
+            setHighlightedTaskId(foundTask.id);
+        } else {
+            setHighlightedTaskId(null);
+        }
+    };
 
     return (
         <header className="h-auto min-h-[4rem] border-b border-gray-200 dark:border-zinc-800 flex flex-col justify-center px-8 bg-white/50 dark:bg-zinc-950/50 backdrop-blur-md z-10 py-3">
@@ -45,6 +85,20 @@ export const MainHeader: React.FC<MainHeaderProps> = ({
 
                 {/* Status Indicator & AI */}
                 <div className="flex items-center gap-4">
+                    
+                    {/* Search Box */}
+                    <div className="relative group">
+                        <input 
+                            type="text" 
+                            placeholder="Find by ID..." 
+                            className="pl-8 pr-3 py-1.5 text-sm bg-gray-100 dark:bg-zinc-800/50 border border-transparent focus:border-indigo-500 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all w-32 focus:w-48"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                        />
+                        <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                    </div>
+
                     <Button
                         variant="ghost"
                         className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/10 hover:bg-indigo-100 dark:hover:bg-indigo-900/20"
