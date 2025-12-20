@@ -243,8 +243,12 @@ export const SortableTask: React.FC<Props> = ({
                                     />
                                 ) : (
                                     <div
-                                        onDoubleClick={() => setIsEditing(true)}
-                                        className="text-sm leading-5 text-gray-700 dark:text-gray-200 break-words"
+                                        onDoubleClick={(e) => {
+                                            e.stopPropagation();
+                                            setIsEditing(true);
+                                        }}
+                                        className="text-sm leading-5 text-gray-700 dark:text-gray-200 break-words hover:bg-gray-100/50 dark:hover:bg-zinc-800/50 px-1 -mx-1 rounded transition-colors cursor-text"
+                                        title="Double click to edit"
                                     >
                                         {task.content}
                                     </div>
