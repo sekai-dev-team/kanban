@@ -243,23 +243,68 @@ export const useAppData = () => {
     }, []);
 
     const updateTask = useCallback((projectId: string, taskId: string, updates: Partial<Task>) => {
-        const updateRecursive = (tasks: Task[]): Task[] => {
-            return tasks.map(t => {
-                if (t.id === taskId) return { ...t, ...updates };
-                return { ...t, children: updateRecursive(t.children) };
-            });
-        };
-        setData(prev => ({
-            ...prev,
-            projects: prev.projects.map(p => {
-                if (p.id !== projectId) return p;
-                const newCols = { ...p.columns };
-                (Object.keys(newCols) as ColumnId[]).forEach(k => {
-                    newCols[k] = updateRecursive(newCols[k]);
+        setData(prev => {
+            const project = prev.projects.find(p => p.id === projectId);
+            if (!project) return prev;
+
+            // 1. Find the target task to determine its Identity
+            // We need to search the whole tree
+            let targetTask: Task | undefined;
+            const findRecursive = (tasks: Task[]) => {
+                for (const t of tasks) {
+                    if (t.id === taskId) {
+                        targetTask = t;
+                        return;
+                    }
+                    findRecursive(t.children);
+                    if (targetTask) return;
+                }
+            };
+            Object.values(project.columns).forEach(col => findRecursive(col));
+
+            if (!targetTask) return prev;
+
+            const identityId = targetTask.sourceId || targetTask.id;
+            const isSyncUpdate = 'content' in updates || 'priority' in updates;
+
+            // 2. Recursive Update Function
+            const updateRecursive = (tasks: Task[]): Task[] => {
+                return tasks.map(t => {
+                    const currentIdentity = t.sourceId || t.id;
+                    let shouldUpdate = false;
+
+                    if (isSyncUpdate) {
+                         // Sync mode: Update if identities match
+                         if (currentIdentity === identityId) {
+                             shouldUpdate = true;
+                         }
+                    } else {
+                         // Normal mode: Update only if IDs match
+                         if (t.id === taskId) {
+                             shouldUpdate = true;
+                         }
+                    }
+
+                    if (shouldUpdate) {
+                        return { ...t, ...updates };
+                    }
+
+                    return { ...t, children: updateRecursive(t.children) };
                 });
-                return { ...p, updatedAt: Date.now(), columns: newCols };
-            })
-        }));
+            };
+
+            return {
+                ...prev,
+                projects: prev.projects.map(p => {
+                    if (p.id !== projectId) return p;
+                    const newCols = { ...p.columns };
+                    (Object.keys(newCols) as ColumnId[]).forEach(k => {
+                        newCols[k] = updateRecursive(newCols[k]);
+                    });
+                    return { ...p, updatedAt: Date.now(), columns: newCols };
+                })
+            };
+        });
     }, []);
 
     const addChildTask = useCallback((projectId: string, parentId: string, content: string) => {

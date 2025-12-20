@@ -285,7 +285,7 @@ export const useDnd = ({ activeProject, updateProjectColumns }: UseDndProps) => 
                      ...sourceTask,
                      id: nanoid(),
                      children: [], // 复制时不携带子卡片
-                     // sourceId 保持不变 (if existing)
+                     sourceId: sourceTask.sourceId || sourceTask.id
                  };
              }
              // Do NOT remove original from newCols
