@@ -302,6 +302,17 @@ export const SortableTask: React.FC<Props> = ({
                                                 <div className="flex items-center gap-2"><Trash size={14} /> Delete</div>
                                             </MenuItem>
                                         </Menu>
+
+                                        <button 
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                onDelete(task.id);
+                                            }} 
+                                            className="p-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                                            title="Quick Delete"
+                                        >
+                                            <Trash size={14} />
+                                        </button>
                                     </div>
                                 </div>
                             </div>
