@@ -2,7 +2,7 @@ import React from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Clock, ArrowRight } from 'lucide-react';
-import { Project, ProjectStatus } from '../../types';
+import { Project, ProjectStatus, Task } from '../../types';
 
 interface ProjectCardProps {
     project: Project;
@@ -37,6 +37,18 @@ const getStatusBorderClass = (status: ProjectStatus) => {
     }
 };
 
+const countLeaves = (tasks: Task[]): number => {
+    let count = 0;
+    for (const t of tasks) {
+        if (t.children.length === 0) {
+            count++;
+        } else {
+            count += countLeaves(t.children);
+        }
+    }
+    return count;
+};
+
 export const ProjectCard: React.FC<ProjectCardProps> = ({ project, onClick }) => {
     const {
         attributes,
@@ -56,8 +68,8 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({ project, onClick }) =>
     };
 
     const allTasks = Object.values(project.columns).flat();
-    const totalCount = allTasks.length;
-    const doneCount = project.columns['done'].length;
+    const totalCount = countLeaves(allTasks);
+    const doneCount = countLeaves(project.columns['done']);
     const progress = totalCount === 0 ? 0 : Math.round((doneCount / totalCount) * 100);
 
     if (isDragging) {
