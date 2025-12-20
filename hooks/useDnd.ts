@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   DragStartEvent,
   DragOverEvent,
@@ -12,7 +12,8 @@ import {
 } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { nanoid } from 'nanoid';
-import { Project, Task, ColumnId, DragState } from '../types';
+import { Project, Task, ColumnId, DragState, AutoGroupState } from '../types';
+import { useCtrlPress } from './useCtrlPress';
 
 // Helper functions needed for DnD logic
 const findTask = (tasks: Task[], id: string): Task | undefined => {
@@ -44,6 +45,28 @@ const countLeaves = (tasks: Task[]): number => {
   return count;
 };
 
+const findParent = (tasks: Task[], childId: string): Task | undefined => {
+  for (const task of tasks) {
+    if (task.children.some(c => c.id === childId)) return task;
+    const found = findParent(task.children, childId);
+    if (found) return found;
+  }
+  return undefined;
+};
+
+const findMatchingParent = (tasks: Task[], targetIdentityId: string): Task | undefined => {
+  for (const task of tasks) {
+    // 1. 匹配副本: 任务是本尊的另一个分身 (sourceId 相同)
+    if (task.sourceId === targetIdentityId) return task;
+    // 2. 匹配本尊: 任务就是本尊自己 (id 相同)
+    if (task.id === targetIdentityId) return task;
+    
+    const found = findMatchingParent(task.children, targetIdentityId);
+    if (found) return found;
+  }
+  return undefined;
+};
+
 const getRealId = (id: string): string => {
   if (id.endsWith('-top')) return id.replace('-top', '');
   if (id.endsWith('-mid')) return id.replace('-mid', '');
@@ -68,11 +91,69 @@ export const useDnd = ({ activeProject, updateProjectColumns }: UseDndProps) => 
     const [activeId, setActiveId] = useState<string | null>(null); 
     const [activeTask, setActiveTask] = useState<Task | null>(null); 
     const [dragState, setDragState] = useState<DragState | null>(null);
+    const [autoGroupState, setAutoGroupState] = useState<AutoGroupState>(null);
+    
+    const isCtrlPressed = useCtrlPress();
 
     const sensors = useSensors(
         useSensor(PointerSensor, { activationConstraint: { distance: 5 } }), 
         useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
     );
+
+    // Calculate AutoGroup Visual State
+    useEffect(() => {
+        if (!activeId || !dragState || !isCtrlPressed) {
+            setAutoGroupState(null);
+            return;
+        }
+
+        // Logic must match onDragEnd
+        const allTasks = Object.values(activeProject.columns).flat();
+        const originalParent = findParent(allTasks, activeId);
+        
+        // Find source column
+        let sourceColumnId: string | undefined;
+        (Object.keys(activeProject.columns) as ColumnId[]).forEach(k => {
+            if (findTask(activeProject.columns[k], activeId)) {
+                sourceColumnId = k;
+            }
+        });
+
+        // Find target column based on dragState.targetId
+        let targetColumnId: string | undefined;
+        // Case 1: Target is Column
+        if (Object.keys(activeProject.columns).includes(dragState.targetId)) {
+            targetColumnId = dragState.targetId;
+        } else {
+            // Case 2: Target is Task -> Find its column
+            (Object.keys(activeProject.columns) as ColumnId[]).forEach(k => {
+                 if (findTask(activeProject.columns[k], dragState.targetId)) {
+                     targetColumnId = k;
+                 }
+            });
+        }
+
+        if (originalParent && sourceColumnId && targetColumnId && sourceColumnId !== targetColumnId) {
+            // Check if we are "nesting". If nesting, we DON'T do auto-group (as per our decision)
+            if (dragState.type === 'nest') {
+                setAutoGroupState(null);
+                return;
+            }
+
+            const targetColumnTasks = activeProject.columns[targetColumnId as ColumnId];
+            const identityId = originalParent.sourceId || originalParent.id;
+            const matchingParent = findMatchingParent(targetColumnTasks, identityId);
+
+            if (matchingParent) {
+                setAutoGroupState({ type: 'group-existing', parentId: matchingParent.id });
+            } else {
+                setAutoGroupState({ type: 'create-parent' });
+            }
+        } else {
+            setAutoGroupState(null);
+        }
+
+    }, [activeId, dragState, isCtrlPressed, activeProject]);
 
     const onDragStart = (event: DragStartEvent) => {
         const { active } = event;
@@ -87,9 +168,9 @@ export const useDnd = ({ activeProject, updateProjectColumns }: UseDndProps) => 
 
     const onDragOver = (event: DragOverEvent) => {
         const { active, over } = event;
-        const isClone = (event.activatorEvent as any)?.ctrlKey; 
+        // Removed isClone check here to allow interaction with Ctrl key
         
-        if (!over || isClone) {
+        if (!over) {
           setDragState(null);
           return;
         }
@@ -169,49 +250,39 @@ export const useDnd = ({ activeProject, updateProjectColumns }: UseDndProps) => 
     
         if (!over) return;
     
-        const isClone = (event.activatorEvent as any)?.ctrlKey;
+        // Ctrl key now means "Preserve Context" (Keep Parent), not "Clone"
+        const isPreserveContext = (event.activatorEvent as any)?.ctrlKey;
         
         const newCols = JSON.parse(JSON.stringify(activeProject.columns)); 
 
-        // A. 准备待移动任务
-        let taskToMove: Task | null = null;
+        // 查找源数据（在移除之前）
+        const allTasks = Object.values(activeProject.columns).flat();
+        const originalParent = findParent(allTasks, active.id as string);
+        let sourceColumnId: string | undefined;
+        (Object.keys(activeProject.columns) as ColumnId[]).forEach(k => {
+            if (findTask(activeProject.columns[k], active.id as string)) {
+                sourceColumnId = k;
+            }
+        });
 
-        if (isClone) {
-           const findOriginal = (tasks: Task[]): Task | undefined => {
-              for (const t of tasks) {
-                 if (t.id === active.id) return t;
-                 const f = findOriginal(t.children);
-                 if (f) return f;
-              }
-              return undefined;
-           };
-           const original = findOriginal(Object.values(activeProject.columns).flat());
-           if (original) {
-               const deepCloneTask = (t: Task): Task => ({
-                   ...t,
-                   id: nanoid(),
-                   content: t.content, 
-                   children: t.children.map(deepCloneTask)
-               });
-               taskToMove = deepCloneTask(original);
-           }
-        } else {
-           const removeFromTree = (tasks: Task[]): Task[] => {
-              const res: Task[] = [];
-              for (const t of tasks) {
-                 if (t.id === active.id) {
-                    taskToMove = t; 
-                 } else {
-                    t.children = removeFromTree(t.children);
-                    res.push(t);
-                 }
-              }
-              return res;
-           };
-           (Object.keys(newCols) as ColumnId[]).forEach(k => {
-               newCols[k] = removeFromTree(newCols[k]);
-           });
-        }
+        // A. 准备待移动任务 (Always Move, never Clone)
+        let taskToMove: Task | null = null;
+        
+        const removeFromTree = (tasks: Task[]): Task[] => {
+            const res: Task[] = [];
+            for (const t of tasks) {
+                if (t.id === active.id) {
+                taskToMove = t; 
+                } else {
+                t.children = removeFromTree(t.children);
+                res.push(t);
+                }
+            }
+            return res;
+        };
+        (Object.keys(newCols) as ColumnId[]).forEach(k => {
+            newCols[k] = removeFromTree(newCols[k]);
+        });
 
         if (!taskToMove) return; 
 
@@ -219,15 +290,51 @@ export const useDnd = ({ activeProject, updateProjectColumns }: UseDndProps) => 
         if (finalDragState) {
             const { targetId, type, position } = finalDragState;
 
-            // 情况1: 目标是 Column
+            // 情况1: 目标是 Column (即拖到了列的根部/空白处)
             if (Object.keys(newCols).includes(targetId)) {
+                
+                // --- Logic: Auto-Grouping ONLY if Ctrl is pressed ---
+                const isCrossColumn = sourceColumnId && sourceColumnId !== targetId;
+                
+                if (isPreserveContext && originalParent && isCrossColumn) {
+                    const targetColumnTasks = newCols[targetId as ColumnId];
+                    const identityId = originalParent.sourceId || originalParent.id;
+                    const matchingParent = findMatchingParent(targetColumnTasks, identityId);
+
+                    if (matchingParent) {
+                        // Found matching parent -> Group under it
+                        matchingParent.children.push(taskToMove);
+                        matchingParent.isExpanded = true;
+                        updateProjectColumns(activeProject.id, newCols);
+                        return;
+                    } else {
+                        // No match -> Copy parent -> Group under new parent
+                        const parentCopy: Task = {
+                            ...originalParent,
+                            id: nanoid(), 
+                            sourceId: identityId, 
+                            children: [taskToMove],
+                        };
+                        
+                        if (position === 'top') {
+                            newCols[targetId].unshift(parentCopy);
+                        } else {
+                            newCols[targetId].push(parentCopy);
+                        }
+                        updateProjectColumns(activeProject.id, newCols);
+                        return;
+                    }
+                }
+                // --- End Auto-Grouping Logic ---
+
+                // Standard Drop (Become Top-Level Task)
                 if (position === 'top') {
                     newCols[targetId].unshift(taskToMove);
                 } else {
                     if (targetId === 'in-progress') {
                         const currentLeaves = countLeaves(newCols['in-progress']);
                         const incomingLeaves = (taskToMove as Task).children.length === 0 ? 1 : countLeaves((taskToMove as Task).children);
-                        if (currentLeaves + incomingLeaves > activeProject.wipLimit && !isClone) {
+                        if (currentLeaves + incomingLeaves > activeProject.wipLimit) {
                              // Limit handling logic can be added here or via callback if needed
                         }
                     }
@@ -238,32 +345,65 @@ export const useDnd = ({ activeProject, updateProjectColumns }: UseDndProps) => 
             }
 
             // 情况2: 目标是 Task (Nest / Insert)
-            const findTargetAndAction = (tasks: Task[]) => {
-                 for (let i = 0; i < tasks.length; i++) {
-                     const t = tasks[i];
-                     if (t.id === targetId) {
-                         if (type === 'nest') {
-                             t.children.push(taskToMove!);
-                             t.isExpanded = true; 
-                         } else if (type === 'insert') {
-                             const index = position === 'top' ? i : i + 1;
-                             tasks.splice(index, 0, taskToMove!);
-                         }
-                         return true; 
-                     }
-                     if (findTargetAndAction(t.children)) return true;
-                 }
-                 return false;
-             };
+            // Revised iteration to handle Context Preserve on Insert
+            let handled = false;
+            (Object.keys(newCols) as ColumnId[]).forEach(k => {
+                if (handled) return;
 
-             let handled = false;
-             (Object.keys(newCols) as ColumnId[]).forEach(k => {
-                 if (!handled) handled = findTargetAndAction(newCols[k]);
-             });
-             
-             if (!handled) {
-                 newCols['backlog'].push(taskToMove); 
-             }
+                // Helper recursive function that knows about the current column ID
+                const findAndHandle = (tasks: Task[], colId: string): boolean => {
+                   for (let i = 0; i < tasks.length; i++) {
+                       const t = tasks[i];
+                       if (t.id === targetId) {
+                           
+                           // Check for Preserve Context Logic
+                           const isCrossColumn = sourceColumnId && sourceColumnId !== colId;
+                           
+                           if (type === 'insert' && isPreserveContext && originalParent && isCrossColumn) {
+                               const targetColumnTasks = newCols[colId as ColumnId];
+                               const identityId = originalParent.sourceId || originalParent.id;
+                               const matchingParent = findMatchingParent(targetColumnTasks, identityId);
+                               
+                               if (matchingParent) {
+                                   // Case A: Parent Exists -> Group into it (Ignore specific insert position)
+                                   matchingParent.children.push(taskToMove!);
+                                   matchingParent.isExpanded = true;
+                                   return true;
+                               } else {
+                                   // Case B: Parent Doesn't Exist -> Create Copy -> Insert at THIS specific position
+                                   const parentCopy: Task = {
+                                       ...originalParent,
+                                       id: nanoid(), 
+                                       sourceId: identityId, 
+                                       children: [taskToMove!],
+                                   };
+                                   const index = position === 'top' ? i : i + 1;
+                                   tasks.splice(index, 0, parentCopy);
+                                   return true;
+                               }
+                           }
+
+                           // Standard Logic
+                           if (type === 'nest') {
+                               t.children.push(taskToMove!);
+                               t.isExpanded = true; 
+                           } else if (type === 'insert') {
+                               const index = position === 'top' ? i : i + 1;
+                               tasks.splice(index, 0, taskToMove!);
+                           }
+                           return true; 
+                       }
+                       if (findAndHandle(t.children, colId)) return true;
+                   }
+                   return false;
+                };
+
+                if (findAndHandle(newCols[k], k)) handled = true;
+            });
+            
+            if (!handled) {
+                newCols['backlog'].push(taskToMove); 
+            }
         } else {
             // Fallback (e.g. dropped on background)
             if (!isClone) {
@@ -278,6 +418,7 @@ export const useDnd = ({ activeProject, updateProjectColumns }: UseDndProps) => 
         activeId,
         activeTask,
         dragState,
+        autoGroupState, // Exposed for UI feedback
         sensors,
         onDragStart,
         onDragOver,

@@ -46,6 +46,7 @@ export const Board: React.FC<BoardProps> = ({
     const {
         activeTask,
         dragState,
+        autoGroupState, // Exposed from hook
         sensors,
         onDragStart,
         onDragOver,
@@ -97,6 +98,7 @@ export const Board: React.FC<BoardProps> = ({
                                 onClone={() => { }}
                                 dragState={null}
                                 isOverlay={true}
+                                autoGroupState={autoGroupState} // Pass the state
                             />
                         </div>
                     ) : null}

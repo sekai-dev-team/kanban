@@ -20,6 +20,7 @@ export interface Task {
     isExpanded?: boolean; // 可选属性 (?)：记录当前卡片是否展开显示了子任务
     completed?: boolean; // 标记任务是否完成
     priority?: Priority; // 标记任务的重要程度
+    sourceId?: string;   // 溯源 ID：用于识别跨列的副本归属
 }
 
 // 项目的定义
@@ -63,3 +64,11 @@ export interface DragState {
     targetId: string;        // 目标卡片 ID
     position?: 'top' | 'bottom'; // 仅在 insert 模式下有效，指示插入到目标上方还是下方
 }
+
+export type AutoGroupState = {
+    type: 'group-existing';
+    parentId: string; // 目标列中已存在的父任务 ID
+} | {
+    type: 'create-parent';
+    // parentContent: string; // 暂时不需要 content，UI 自己知道
+} | null;

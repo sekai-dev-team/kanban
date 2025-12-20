@@ -4,9 +4,9 @@ import { useDroppable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import {
     MoreHorizontal, ChevronRight, ChevronDown, Plus, Copy, Trash, Edit2,
-    CheckSquare, Flag
+    CheckSquare, Flag, ArrowUpRight, Link
 } from 'lucide-react';
-import { Task, ColumnId, DragState, Priority } from '../types';
+import { Task, ColumnId, DragState, Priority, AutoGroupState } from '../types';
 import { Menu, MenuItem } from './ui';
 
 interface Props {
@@ -19,6 +19,7 @@ interface Props {
     onClone: (taskId: string) => void;
     dragState: DragState | null;
     isOverlay?: boolean;
+    autoGroupState?: AutoGroupState; // New Prop
 }
 
 const getRelativeTime = (timestamp: number) => {
@@ -52,7 +53,8 @@ export const SortableTask: React.FC<Props> = ({
     onMoveToColumn,
     onClone,
     dragState,
-    isOverlay = false
+    isOverlay = false,
+    autoGroupState
 }) => {
     const {
         attributes,
@@ -126,6 +128,30 @@ export const SortableTask: React.FC<Props> = ({
 
     return (
         <div ref={setNodeRef} style={style} className="touch-manipulation relative select-none">
+            
+            {/* Visual Feedback for Auto Grouping (Overlay Only) */}
+            {isOverlay && autoGroupState && (
+                <div className={`absolute -top-8 left-0 right-0 flex justify-center z-50 animate-in fade-in slide-in-from-bottom-2 duration-200`}>
+                    <div className={`px-3 py-1.5 rounded-full text-xs font-bold shadow-lg flex items-center gap-1.5 ${
+                        autoGroupState.type === 'group-existing' 
+                            ? 'bg-blue-500 text-white' 
+                            : 'bg-indigo-500 text-white'
+                    }`}>
+                        {autoGroupState.type === 'group-existing' ? (
+                            <>
+                                <Link size={12} className="stroke-[3]" />
+                                <span>Linking to Parent</span>
+                            </>
+                        ) : (
+                            <>
+                                <ArrowUpRight size={12} className="stroke-[3]" />
+                                <span>Creating Parent Context</span>
+                            </>
+                        )}
+                    </div>
+                </div>
+            )}
+
             {!isDragging && !isOverlay && (
                 <>
                     <div ref={setTopRef} className="absolute top-0 left-0 right-0 h-[20%] z-10 pointer-events-none" />
