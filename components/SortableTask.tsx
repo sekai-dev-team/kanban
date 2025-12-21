@@ -111,6 +111,7 @@ export const SortableTask: React.FC<Props> = ({
     const { completed: completedSubtasks, total: totalSubtasks } = getProgress ? getProgress(task.id) : { completed: 0, total: 0};
     const progressPercent = totalSubtasks === 0 ? 0 : Math.round((completedSubtasks / totalSubtasks) * 100);
     const showProgress = totalSubtasks > 0;
+    const hasLocalChildren = task.children.length > 0;
 
     const style = { transition };
     const isTarget = dragState?.targetId === task.id;
@@ -207,9 +208,9 @@ export const SortableTask: React.FC<Props> = ({
                        py-2 pr-2 pl-2: 上下右左都设为 8px (之前是 12px)，让内容更饱满
                     */}
                     <div 
-                        className={`py-2 pr-2 pl-2 ${totalSubtasks > 0 ? 'cursor-pointer' : ''}`}
+                        className={`py-2 pr-2 pl-2 ${hasLocalChildren ? 'cursor-pointer' : ''}`}
                         onClick={() => {
-                            if (totalSubtasks > 0 && !isEditing) {
+                            if (hasLocalChildren && !isEditing) {
                                 onUpdate(task.id, { isExpanded: !task.isExpanded });
                             }
                         }}
@@ -226,7 +227,7 @@ export const SortableTask: React.FC<Props> = ({
                                     e.stopPropagation();
                                     onUpdate(task.id, { isExpanded: !task.isExpanded });
                                 }}
-                                className={`mt-[3px] text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors relative z-20 ${totalSubtasks === 0 ? 'invisible pointer-events-none' : ''}`}
+                                className={`mt-[3px] text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors relative z-20 ${!hasLocalChildren ? 'invisible pointer-events-none' : ''}`}
                             >
                                 {task.isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                             </button>
