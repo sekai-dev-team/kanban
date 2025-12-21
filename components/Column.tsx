@@ -165,6 +165,13 @@ export const Column: React.FC<Props> = ({
                                 value={newTaskContent}
                                 onChange={(e) => setNewTaskContent(e.target.value)}
                                 onKeyDown={(e) => e.key === 'Escape' && setIsAdding(false)}
+                                onBlur={() => {
+                                    if (newTaskContent.trim()) {
+                                        onAddTask(newTaskContent);
+                                        setNewTaskContent('');
+                                    }
+                                    setIsAdding(false);
+                                }}
                                 className="mb-2"
                             />
                             <div className="flex gap-2 justify-end">
