@@ -253,8 +253,8 @@ export const useDnd = ({ activeProject, updateProjectColumns }: UseDndProps) => 
     
         if (!over) return;
     
-        // Ctrl key logic
-        const ctrlKey = (event.activatorEvent as any)?.ctrlKey || isCtrlPressed;
+        // Ctrl key logic - Rely on live state
+        const ctrlKey = isCtrlPressed;
         
         const newCols = JSON.parse(JSON.stringify(activeProject.columns)); 
 

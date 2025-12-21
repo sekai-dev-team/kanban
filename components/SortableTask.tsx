@@ -140,7 +140,7 @@ export const SortableTask: React.FC<Props> = ({
             style={style} 
             className={`touch-manipulation relative select-none ${isHighlighted ? 'z-30' : ''}`}
             {...attributes} 
-            {...(isEditing ? {} : listeners)}
+            {...(isEditing || isAddingChild ? {} : listeners)}
         >
             
             {/* Visual Feedback for Auto Grouping (Overlay Only) */}
@@ -368,7 +368,23 @@ export const SortableTask: React.FC<Props> = ({
                     </SortableContext>
                     {isAddingChild && (
                         <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-lg p-2 shadow-sm animate-in fade-in zoom-in-95 duration-100">
-                            <input ref={addChildInputRef} value={newChildContent} onChange={(e) => setNewChildContent(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') handleAddChildSubmit(); if (e.key === 'Escape') setIsAddingChild(false); }} onBlur={() => { if (!newChildContent) setIsAddingChild(false); }} placeholder="Type a subtask..." className="w-full bg-transparent text-sm focus:outline-none placeholder:text-gray-400" />
+                            <input 
+                                ref={addChildInputRef} 
+                                value={newChildContent} 
+                                onChange={(e) => setNewChildContent(e.target.value)} 
+                                onClick={(e) => e.stopPropagation()} 
+                                onKeyDown={(e) => { 
+                                    e.stopPropagation(); 
+                                    if (e.key === 'Enter') handleAddChildSubmit(); 
+                                    if (e.key === 'Escape') setIsAddingChild(false); 
+                                }} 
+                                onBlur={() => { 
+                                    if (newChildContent.trim()) handleAddChildSubmit(); 
+                                    setIsAddingChild(false); 
+                                }} 
+                                placeholder="Type a subtask..." 
+                                className="w-full bg-transparent text-sm focus:outline-none placeholder:text-gray-400" 
+                            />
                         </div>
                     )}
                 </div>
